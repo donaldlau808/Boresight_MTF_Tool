@@ -3,11 +3,10 @@
 block_cipher = None
 
 a = Analysis(
-    ['main.py'],
-    pathex=[],
+    ['Boresight/main.py'],
+    pathex=['Boresight'],
     binaries=[],
     datas=[],
-    # Force PyInstaller to include these heavy data libraries
     hiddenimports=[
         'pandas', 
         'openpyxl', 
@@ -36,14 +35,14 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False, # Set to True ONLY if you need to debug fatal startup crashes
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None, # Add 'icon.ico' here later if you create an app logo
+    icon=None,
 )
