@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QFileDialog
 from ui.main_window import MainWindow
 from core.logger import setup_logger
 
+
 def global_exception_handler(exc_type, exc_value, exc_traceback):
     """Catches fatal errors, prevents silent UI crashes, and prompts user to save the crash log."""
     logger, _ = setup_logger()
@@ -12,7 +13,6 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
 
     error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
     
-    # Ensure a QApplication exists to render the dialogs
     app = QApplication.instance()
     if not app:
         app = QApplication(sys.argv)
@@ -24,7 +24,6 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
     msg_box.setDetailedText(error_msg)
     msg_box.exec()
     
-    # Prompt the user to save the crash log somewhere they can easily find it
     file_path, _ = QFileDialog.getSaveFileName(
         None, 
         "Save Crash Report", 
@@ -42,35 +41,36 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
             
     sys.exit(1)
 
+
 def run_startup_checks():
-    """Lightweight diagnostics to verify system readiness."""
+    """Lightweight diagnostics to verify core runtime libraries and DLL bindings."""
     logger, _ = setup_logger()
     try:
-        # Verify pandas/openpyxl engine bindings are available early
         import pandas as pd
         import openpyxl
-        logger.info("Startup Diagnostics: Dependencies validated.")
-        return True
+        import cv2
+        import matplotlib
+        logger.info("Startup Diagnostics: All core dependencies validated.")
+        return True, ""
     except ImportError as e:
-        logger.critical(f"Startup Diagnostics Failed: Missing library - {e}")
-        return False
+        logger.critical(f"Startup Diagnostics Failed: Missing library or runtime DLL - {e}")
+        return False, str(e)
+
 
 if __name__ == "__main__":
-    # 1. Mount the global failure mode handler
     sys.excepthook = global_exception_handler
     
     app = QApplication(sys.argv)
 
-    # 2. Run Startup Self-Checks
-    if not run_startup_checks():
+    ok, err_detail = run_startup_checks()
+    if not ok:
         QMessageBox.critical(
             None, 
             "Startup Failure", 
-            "A critical dependency is missing. The application cannot start."
+            f"A critical library or Windows C++ runtime component failed to load:\n\n{err_detail}"
         )
         sys.exit(1)
 
-    # 3. Launch UI
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

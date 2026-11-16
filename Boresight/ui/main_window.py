@@ -1,6 +1,8 @@
 import os
+import re
 import glob
 import shutil
+import tempfile
 import pandas as pd
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                                QPushButton, QLabel, QLineEdit, QFileDialog, 
@@ -13,11 +15,13 @@ from PySide6.QtCore import Qt, QSettings
 from core import boresight_eval
 from core.logger import setup_logger
 from ui.components.custom_labels import ClickableLabel, ResizableImageLabel
-from ui.components.settings_dialog import SettingsDialog  # <--- NEW IMPORT
+from ui.components.settings_dialog import SettingsDialog
 from ui.threads import BatchProcessThread
 
 
 class MainWindow(QMainWindow):
+    VALID_EXTS = ('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Boresight MTF Evaluation Tool")
@@ -27,8 +31,12 @@ class MainWindow(QMainWindow):
         self.logger, self.log_emitter = setup_logger()
         self.log_emitter.log_signal.connect(self.append_log)
         
-        # State tracking for multi-system manual coords
-        self.system_manual_coords = {} 
+        # Session state tracking for active queue items
+        self.system_manual_coords = {}
+        self.system_image_paths = {}  # {system_num: {'EON': path_or_None, 'MWIR': path_or_None}}
+        self.fresh_systems = set()    # Systems newly added via drag-and-drop awaiting processing
+        self.drop_cache_dir = os.path.join(tempfile.gettempdir(), "Boresight_Drop_Cache")
+        shutil.rmtree(self.drop_cache_dir, ignore_errors=True)
         self.process_thread = None
 
         central_widget = QWidget()
@@ -231,75 +239,195 @@ class MainWindow(QMainWindow):
         self.load_profile()
         self.logger.info("Ready. Select Input/Output directories or drop images to begin.")
 
-    def handle_image_drop(self, channel, file_path):
-        input_dir = self.dir_input_base.text()
-        output_dir = self.dir_output_base.text()
-        
-        if not input_dir or not os.path.exists(input_dir):
-            input_dir = os.path.join(os.getcwd(), "Boresight_Workspace")
-            os.makedirs(input_dir, exist_ok=True)
-            self.dir_input_base.setText(input_dir)
-            self.logger.info(f"Auto-created input directory at {input_dir}")
-            
-        if not output_dir:
-            self.dir_output_base.setText(input_dir)
-            
-        system_num, ok = QInputDialog.getText(
-            self, 
-            "System Number Request", 
-            f"Enter the System Number for this {channel} image:"
-        )
-        
-        if not ok or not system_num.strip():
-            self.logger.info("File drop cancelled by user.")
-            return
-            
-        system_num = system_num.strip().zfill(3)
-        dest_dir = os.path.join(input_dir, channel, system_num)
-        os.makedirs(dest_dir, exist_ok=True)
-        
-        for old_file in glob.glob(os.path.join(dest_dir, "*.*")):
-            try: os.remove(old_file)
-            except Exception as e: self.logger.warning(f"Could not remove old file {old_file}: {e}")
-                
-        dest_path = os.path.join(dest_dir, os.path.basename(file_path))
+    # ==========================================
+    # FILESYSTEM & VALIDATION HELPERS
+    # ==========================================
+    def _is_dir_writable(self, target_dir):
+        """Verifies the application can create and remove files in target_dir."""
         try:
-            shutil.copy2(file_path, dest_path)
-            self.logger.info(f"Routed {os.path.basename(file_path)} to -> {channel}/{system_num}")
-        except Exception as e:
-            self.logger.error(f"Failed to copy dropped file: {e}")
-            return
-            
-        self.populate_folder_list(input_dir)
-        items = self.folder_list.findItems(system_num, Qt.MatchExactly)
-        if items:
-            self.folder_list.setCurrentItem(items[0])
+            os.makedirs(target_dir, exist_ok=True)
+            probe = os.path.join(target_dir, f".write_probe_{os.getpid()}")
+            with open(probe, "w") as f:
+                f.write("ok")
+            os.remove(probe)
+            return True
+        except Exception:
+            return False
 
-    def remove_selected_system(self):
-        """Safely removes the system from the active UI queue without deleting the source files."""
-        if not self.folder_list.currentItem():
-            QMessageBox.warning(self, "No Selection", "Please select a System Number to remove.")
-            return
-            
-        system_num = self.folder_list.currentItem().text()
-        
-        # Pop it out of the UI List Tool Cache
-        row = self.folder_list.currentRow()
-        self.folder_list.takeItem(row)
-        
-        # Remove it from manual tracking if it exists
-        if system_num in self.system_manual_coords:
-            del self.system_manual_coords[system_num]
-            
-        self.logger.info(f"Removed System {system_num} from current processing queue.")
-        
-        # Force clear the viewers
+    def _get_default_workspace(self):
+        """Returns a guaranteed writable workspace even if the .exe runs from Program Files."""
+        cwd_ws = os.path.join(os.getcwd(), "Boresight_Workspace")
+        if self._is_dir_writable(cwd_ws):
+            return cwd_ws
+        docs_ws = os.path.join(os.path.expanduser("~"), "Documents", "Boresight_Workspace")
+        self._is_dir_writable(docs_ws)
+        return docs_ws
+
+    def _sanitize_system_id(self, raw_text):
+        """Strips invalid Windows path characters and zero-pads numeric IDs."""
+        cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", raw_text.strip())
+        if not cleaned:
+            return ""
+        return cleaned.zfill(3) if cleaned.isdigit() else cleaned
+
+    def _find_channel_dir(self, base_dir, channel_name):
+        """Finds EON/MWIR subfolder case-insensitively."""
+        if not os.path.isdir(base_dir):
+            return None
+        try:
+            for entry in os.scandir(base_dir):
+                if entry.is_dir() and entry.name.upper() == channel_name.upper():
+                    return entry.path
+        except PermissionError:
+            pass
+        return None
+
+    def _get_valid_images(self, folder_path):
+        """Returns sorted, readable, non-empty image file paths in folder_path."""
+        if not folder_path or not os.path.isdir(folder_path):
+            return []
+        valid = []
+        try:
+            for entry in os.scandir(folder_path):
+                if entry.is_file() and entry.name.lower().endswith(self.VALID_EXTS):
+                    try:
+                        if entry.stat().st_size > 0:
+                            valid.append(entry.path)
+                    except OSError:
+                        pass
+        except PermissionError:
+            pass
+        return sorted(valid)
+
+    def _check_excel_unlocked(self, res_dir):
+        """Returns True if no Excel files in res_dir are locked by another process."""
+        if not os.path.isdir(res_dir):
+            return True
+        for xlsx_path in glob.glob(os.path.join(res_dir, "*.xlsx")):
+            if os.path.basename(xlsx_path).startswith("~$"):
+                self.logger.error(f"Excel lock file detected: {os.path.basename(xlsx_path)}. Close Excel first.")
+                return False
+            try:
+                with open(xlsx_path, "a"):
+                    pass
+            except PermissionError:
+                self.logger.error(f"File is locked in Excel: {os.path.basename(xlsx_path)}. Close it and try again.")
+                return False
+        return True
+
+    def _clear_all_viewports(self):
         self.eon_label.clear_image()
         self.mwir_label.clear_image()
         self.diag_side_by_side.clear_image()
         self.diag_eon_mask.clear_image()
         self.diag_mwir_mask.clear_image()
         self.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
+
+    # ==========================================
+    # DRAG & DROP + QUEUE MANAGEMENT
+    # ==========================================
+    def handle_image_drop(self, channel, file_path):
+        file_path = os.path.normpath(file_path)
+        if not os.path.isfile(file_path):
+            self.logger.error(f"Dropped file not found on disk: {file_path} (if dragging from a ZIP archive, extract it first).")
+            return
+        try:
+            if os.path.getsize(file_path) == 0:
+                self.logger.error(f"Dropped file is empty (0 bytes): {os.path.basename(file_path)}")
+                return
+        except OSError as e:
+            self.logger.error(f"Cannot read dropped file: {e}")
+            return
+
+        if not self.dir_output_base.text():
+            default_out = self._get_default_workspace()
+            self.dir_output_base.setText(default_out)
+            self.logger.info(f"Auto-set output directory to {default_out}")
+            
+        raw_num, ok = QInputDialog.getText(
+            self, 
+            "System Number Request", 
+            f"Enter the System Number for this {channel} image:"
+        )
+        
+        if not ok or not raw_num.strip():
+            self.logger.info("File drop cancelled by user.")
+            return
+            
+        system_num = self._sanitize_system_id(raw_num)
+        if not system_num:
+            QMessageBox.warning(self, "Invalid System Number", "System Number contained only invalid characters.")
+            return
+
+        # Copy dropped image into an isolated session cache so browsed input folders are never overwritten
+        dest_dir = os.path.join(self.drop_cache_dir, channel, system_num)
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            for old_file in glob.glob(os.path.join(dest_dir, "*.*")):
+                try:
+                    os.remove(old_file)
+                except Exception as e:
+                    self.logger.warning(f"Could not remove old cached file {old_file}: {e}")
+                    
+            dest_path = os.path.join(dest_dir, os.path.basename(file_path))
+            shutil.copy2(file_path, dest_path)
+            self.logger.info(f"Loaded {os.path.basename(file_path)} into System {system_num} ({channel})")
+        except Exception as e:
+            self.logger.error(f"Failed to stage dropped file ({file_path}): {e}")
+            return
+
+        # If this system is not currently in the active queue (including previously removed systems), start clean
+        if system_num not in self.system_image_paths:
+            self.system_image_paths[system_num] = {'EON': None, 'MWIR': None}
+            self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
+            self.fresh_systems.add(system_num)
+
+        self.system_image_paths[system_num][channel] = dest_path
+
+        # Reset manual coordinate for the replaced channel so stale clicks don't carry over
+        if channel == "EON":
+            self.system_manual_coords[system_num]['eon_x'] = None
+            self.system_manual_coords[system_num]['eon_y'] = None
+        elif channel == "MWIR":
+            self.system_manual_coords[system_num]['mwir_x'] = None
+            self.system_manual_coords[system_num]['mwir_y'] = None
+
+        existing_items = [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
+        if system_num not in existing_items:
+            existing_items.append(system_num)
+            self.folder_list.clear()
+            for item_text in sorted(existing_items):
+                self.folder_list.addItem(item_text)
+
+        items = self.folder_list.findItems(system_num, Qt.MatchExactly)
+        if items:
+            if self.folder_list.currentItem() == items[0]:
+                self.load_selected_folder()
+            else:
+                self.folder_list.setCurrentItem(items[0])
+
+    def remove_selected_system(self):
+        """Safely removes the system from the active UI queue and temp drop cache without deleting source files."""
+        if not self.folder_list.currentItem():
+            QMessageBox.warning(self, "No Selection", "Please select a System Number to remove.")
+            return
+            
+        system_num = self.folder_list.currentItem().text()
+        
+        row = self.folder_list.currentRow()
+        self.folder_list.takeItem(row)
+        
+        self.system_manual_coords.pop(system_num, None)
+        self.system_image_paths.pop(system_num, None)
+        self.fresh_systems.discard(system_num)
+
+        for ch in ("EON", "MWIR"):
+            shutil.rmtree(os.path.join(self.drop_cache_dir, ch, system_num), ignore_errors=True)
+            
+        self.logger.info(f"Removed System {system_num} from current processing queue.")
+        
+        if self.folder_list.count() == 0:
+            self._clear_all_viewports()
 
     def append_log(self, level, msg):
         color = "#d4d4d4"
@@ -350,45 +478,111 @@ class MainWindow(QMainWindow):
 
     def browse_input_directory(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Input Data Directory")
-        if folder:
-            self.dir_input_base.setText(folder)
-            if not self.dir_output_base.text():
+        if not folder:
+            return
+
+        folder = os.path.normpath(folder)
+        # Auto-step up if the user clicked directly inside the EON or MWIR subfolder
+        if os.path.basename(folder).upper() in ("EON", "MWIR"):
+            parent = os.path.dirname(folder)
+            if self._find_channel_dir(parent, "EON") and self._find_channel_dir(parent, "MWIR"):
+                self.logger.info(f"Detected '{os.path.basename(folder)}' subfolder; using parent directory: {parent}")
+                folder = parent
+
+        self.dir_input_base.setText(folder)
+        if not self.dir_output_base.text():
+            if self._is_dir_writable(folder):
                 self.dir_output_base.setText(folder)
-            self.populate_folder_list(folder)
+            else:
+                fallback_out = self._get_default_workspace()
+                self.dir_output_base.setText(fallback_out)
+                self.logger.warning(f"Input directory is read-only; defaulted Output Directory to {fallback_out}")
+
+        self.populate_folder_list(folder)
             
     def browse_output_directory(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Output Results Directory")
-        if folder:
-            self.dir_output_base.setText(folder)
+        if not folder:
+            return
+
+        folder = os.path.normpath(folder)
+        if not self._is_dir_writable(folder):
+            QMessageBox.critical(
+                self,
+                "Read-Only Directory",
+                f"The selected output directory is not writable:\n{folder}\n\nPlease choose a folder where you have write permissions."
+            )
+            self.logger.error(f"Rejected read-only output directory: {folder}")
+            return
+
+        if os.path.basename(folder).upper() in ("EON", "MWIR"):
+            QMessageBox.warning(
+                self,
+                "Invalid Output Directory",
+                "Please select a parent folder rather than an EON or MWIR image folder."
+            )
+            return
+
+        self.dir_output_base.setText(folder)
+        self.logger.info(f"Output directory set to: {folder}")
 
     def populate_folder_list(self, input_dir):
         self.folder_list.clear()
-        eon_dir = os.path.join(input_dir, "EON")
-        mwir_dir = os.path.join(input_dir, "MWIR")
+        self.system_image_paths.clear()
+        self.system_manual_coords.clear()
+        self.fresh_systems.clear()
+        self._clear_all_viewports()
+
+        eon_dir = self._find_channel_dir(input_dir, "EON")
+        mwir_dir = self._find_channel_dir(input_dir, "MWIR")
+
+        if not eon_dir or not mwir_dir:
+            self.logger.warning(f"Expected both 'EON' and 'MWIR' folders inside {input_dir}")
+            QMessageBox.warning(
+                self,
+                "Invalid Directory Structure",
+                f"Could not find both 'EON' and 'MWIR' folders inside:\n{input_dir}\n\n"
+                "Please select the parent folder containing EON and MWIR, or drag and drop images directly."
+            )
+            return
         
         subfolders = set()
-        if os.path.exists(eon_dir):
-            try: subfolders.update([f.name for f in os.scandir(eon_dir) if f.is_dir()])
-            except PermissionError: pass
-                
-        if os.path.exists(mwir_dir):
-            try: subfolders.update([f.name for f in os.scandir(mwir_dir) if f.is_dir()])
-            except PermissionError: pass
-                
-        if not subfolders:
-            self.logger.warning(f"No system folders found in {input_dir}")
+        for ch_dir in (eon_dir, mwir_dir):
+            try:
+                subfolders.update([f.name for f in os.scandir(ch_dir) if f.is_dir()])
+            except PermissionError:
+                self.logger.warning(f"Permission denied scanning {ch_dir}")
+
+        sorted_folders = sorted(list(subfolders))
+        loaded_count = 0
+
+        for folder in sorted_folders:
+            eon_imgs = self._get_valid_images(os.path.join(eon_dir, folder))
+            mwir_imgs = self._get_valid_images(os.path.join(mwir_dir, folder))
+
+            # Skip empty or incomplete single-channel folders (such as stray leftover drop folders)
+            if not eon_imgs or not mwir_imgs:
+                self.logger.warning(f"Skipped incomplete system folder [{folder}]: requires valid images in both EON and MWIR.")
+                continue
+
+            self.system_image_paths[folder] = {
+                'EON': eon_imgs[0],
+                'MWIR': mwir_imgs[0]
+            }
+            self.folder_list.addItem(folder)
+            loaded_count += 1
+
+        if loaded_count == 0:
+            self.logger.warning(f"No complete EON/MWIR system pairs found in {input_dir}")
             return
             
-        sorted_folders = sorted(list(subfolders))
-        for folder in sorted_folders:
-            self.folder_list.addItem(folder)
-            
-        self.logger.info(f"Loaded {len(sorted_folders)} system numbers.")
+        self.logger.info(f"Loaded {loaded_count} complete system pairs.")
+        self.folder_list.setCurrentRow(0)
 
     def load_selected_folder(self):
-        if not self.folder_list.currentItem(): return
+        if not self.folder_list.currentItem():
+            return
         system_num = self.folder_list.currentItem().text()
-        input_dir = self.dir_input_base.text()
         output_dir = self.dir_output_base.text()
         
         self.eon_label.clear_markup()
@@ -397,39 +591,44 @@ class MainWindow(QMainWindow):
         if system_num not in self.system_manual_coords:
             self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
         coords = self.system_manual_coords[system_num]
+        paths = self.system_image_paths.get(system_num, {'EON': None, 'MWIR': None})
+
+        eon_path = paths.get('EON')
+        mwir_path = paths.get('MWIR')
         
-        valid_exts = ('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')
-        eon_images = [img for img in glob.glob(os.path.join(input_dir, "EON", system_num, "*.*")) if img.lower().endswith(valid_exts)]
-        mwir_images = [img for img in glob.glob(os.path.join(input_dir, "MWIR", system_num, "*.*")) if img.lower().endswith(valid_exts)]
-        
-        if eon_images: 
-            self.eon_label.set_image(eon_images[0])
+        if eon_path and os.path.isfile(eon_path):
+            self.eon_label.set_image(eon_path)
             if coords['eon_x'] is not None:
                 self.eon_label.draw_markup(coords['eon_x'], coords['eon_y'])
-        else: 
+        else:
             self.eon_label.clear_image()
             
-        if mwir_images: 
-            self.mwir_label.set_image(mwir_images[0])
+        if mwir_path and os.path.isfile(mwir_path):
+            self.mwir_label.set_image(mwir_path)
             if coords['mwir_x'] is not None:
                 self.mwir_label.draw_markup(coords['mwir_x'], coords['mwir_y'])
-        else: 
+        else:
             self.mwir_label.clear_image()
 
         self.update_manual_status_label()
 
-        if output_dir:
+        if output_dir and system_num not in self.fresh_systems:
             res_dir = os.path.join(output_dir, "Boresight_Outputs")
             path_sbs = os.path.join(res_dir, f"{system_num}_side_by_side_zoomed.png")
             path_eon = os.path.join(res_dir, f"{system_num}_eon_mask_diagnostic_zoomed.png")
             path_mwir = os.path.join(res_dir, f"{system_num}_mwir_mask_diagnostic_zoomed.png")
             
-            self.diag_side_by_side.set_image(path_sbs) if os.path.exists(path_sbs) else self.diag_side_by_side.clear_image()
-            self.diag_eon_mask.set_image(path_eon) if os.path.exists(path_eon) else self.diag_eon_mask.clear_image()
-            self.diag_mwir_mask.set_image(path_mwir) if os.path.exists(path_mwir) else self.diag_mwir_mask.clear_image()
+            self.diag_side_by_side.set_image(path_sbs) if os.path.isfile(path_sbs) else self.diag_side_by_side.clear_image()
+            self.diag_eon_mask.set_image(path_eon) if os.path.isfile(path_eon) else self.diag_eon_mask.clear_image()
+            self.diag_mwir_mask.set_image(path_mwir) if os.path.isfile(path_mwir) else self.diag_mwir_mask.clear_image()
+        else:
+            self.diag_side_by_side.clear_image()
+            self.diag_eon_mask.clear_image()
+            self.diag_mwir_mask.clear_image()
 
     def clear_manual_coords(self):
-        if not self.folder_list.currentItem(): return
+        if not self.folder_list.currentItem():
+            return
         system_num = self.folder_list.currentItem().text()
         self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
         self.eon_label.clear_markup()
@@ -437,7 +636,8 @@ class MainWindow(QMainWindow):
         self.update_manual_status_label()
 
     def register_click(self, channel, x, y):
-        if not self.folder_list.currentItem(): return
+        if not self.folder_list.currentItem():
+            return
         system_num = self.folder_list.currentItem().text()
         
         if channel == "EON":
@@ -462,17 +662,44 @@ class MainWindow(QMainWindow):
         m_txt = f"({coords['mwir_x']}, {coords['mwir_y']})" if coords['mwir_x'] is not None else "Not Selected"
         self.lbl_manual_status.setText(f"System {system_num}\nEON Target: {e_txt}\nMWIR Target: {m_txt}")
 
+    def _validate_queue_pairs(self, folder_list):
+        """Checks that every system in folder_list has both EON and MWIR files present on disk."""
+        incomplete = []
+        for sys_num in folder_list:
+            paths = self.system_image_paths.get(sys_num, {})
+            eon_ok = bool(paths.get('EON') and os.path.isfile(paths['EON']))
+            mwir_ok = bool(paths.get('MWIR') and os.path.isfile(paths['MWIR']))
+            if not eon_ok or not mwir_ok:
+                missing = []
+                if not eon_ok:
+                    missing.append("EON")
+                if not mwir_ok:
+                    missing.append("MWIR")
+                incomplete.append(f"System {sys_num} (missing {' & '.join(missing)})")
+        return incomplete
+
     def clear_output_directory(self):
         output_dir = self.dir_output_base.text()
-        if not output_dir: return
+        if not output_dir:
+            return False
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
+        if not self._check_excel_unlocked(res_dir):
+            QMessageBox.warning(
+                self,
+                "Excel File Open",
+                "An output Excel report is currently open in Excel.\nPlease close Excel before running processing."
+            )
+            return False
         if os.path.exists(res_dir):
             try:
                 shutil.rmtree(res_dir)
-                os.makedirs(res_dir)
+                os.makedirs(res_dir, exist_ok=True)
                 self.logger.info("Cleared stale files from Boresight_Outputs.")
             except Exception as e:
                 self.logger.error(f"Failed to clear output directory: {e}")
+                QMessageBox.critical(self, "Output Directory Error", f"Could not reset output folder:\n{e}")
+                return False
+        return True
 
     def run_manual_processing(self):
         """Processes only systems that have manual override coordinates defined."""
@@ -481,29 +708,69 @@ class MainWindow(QMainWindow):
             return
 
         systems_to_process = []
+        partial_systems = []
         for sys_idx in range(self.folder_list.count()):
             sys_num = self.folder_list.item(sys_idx).text()
             if sys_num in self.system_manual_coords:
                 coords = self.system_manual_coords[sys_num]
-                # Only add if ALL 4 coordinates are defined
-                if all(v is not None for v in coords.values()):
+                defined_count = sum(1 for v in coords.values() if v is not None)
+                if defined_count == 4:
                     systems_to_process.append(sys_num)
+                elif defined_count > 0:
+                    partial_systems.append(sys_num)
                     
         if not systems_to_process:
-            QMessageBox.warning(self, "Missing Points", "No systems in the queue have fully defined manual coordinates.")
+            msg = "No systems in the queue have fully defined manual coordinates (both EON and MWIR)."
+            if partial_systems:
+                msg += f"\n\nIncomplete points on: {', '.join(partial_systems)}"
+            QMessageBox.warning(self, "Missing Points", msg)
             return
 
-        self.clear_output_directory()
+        incomplete_pairs = self._validate_queue_pairs(systems_to_process)
+        if incomplete_pairs:
+            QMessageBox.warning(
+                self,
+                "Missing Images",
+                "Cannot process because the following systems are missing image files:\n\n" + "\n".join(incomplete_pairs)
+            )
+            return
+
+        res_dir = os.path.join(self.dir_output_base.text(), "Boresight_Outputs")
+        if not self._check_excel_unlocked(res_dir):
+            QMessageBox.warning(self, "Excel File Open", "Please close any open Excel reports in Boresight_Outputs first.")
+            return
+
         self._process_folders(systems_to_process, manual_override=True)
 
     def run_batch_processing(self):
-        """Processes all systems blindly using the auto computer vision core."""
-        if not self.dir_input_base.text() or not self.dir_output_base.text():
-            QMessageBox.warning(self, "Directories Required", "Please specify both Input and Output directories.")
+        """Processes all systems in the active queue using the auto computer vision core."""
+        if self.folder_list.count() == 0:
+            QMessageBox.warning(self, "Queue Empty", "Please browse an Input Directory or drag-and-drop images first.")
             return
-            
-        self.clear_output_directory()
+        if not self.dir_output_base.text():
+            QMessageBox.warning(self, "Output Required", "Please specify an Output Directory first.")
+            return
+        if not (self.chk_orange.isChecked() or self.chk_green.isChecked() or self.chk_white.isChecked()):
+            QMessageBox.warning(
+                self,
+                "Crosshair Color Required",
+                "Please select at least one Crosshair Color (Orange, Green, or White) for automatic detection."
+            )
+            return
+
         folders = [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
+        incomplete_pairs = self._validate_queue_pairs(folders)
+        if incomplete_pairs:
+            QMessageBox.warning(
+                self,
+                "Incomplete Image Pairs",
+                "Every system in the queue must have both EON and MWIR images:\n\n" + "\n".join(incomplete_pairs)
+            )
+            return
+
+        if not self.clear_output_directory():
+            return
+
         self._process_folders(folders, manual_override=False)
 
     def cancel_processing(self):
@@ -516,11 +783,13 @@ class MainWindow(QMainWindow):
     def _process_folders(self, folder_list, manual_override=False):
         input_dir = self.dir_input_base.text()
         output_dir = self.dir_output_base.text()
-        if not input_dir or not output_dir or not folder_list: return
+        if not output_dir or not folder_list:
+            return
 
         self.btn_cancel.setEnabled(True)
         self.btn_run_batch.setEnabled(False)
         self.btn_run_manual.setEnabled(False)
+        self._is_manual_run = manual_override
 
         colors = {'orange': self.chk_orange.isChecked(), 'green': self.chk_green.isChecked(), 'white': self.chk_white.isChecked()}
         self.progress_bar.setMaximum(len(folder_list))
@@ -529,7 +798,8 @@ class MainWindow(QMainWindow):
         self.process_thread = BatchProcessThread(
             folder_list, input_dir, output_dir, colors, 
             manual_coords_dict=self.system_manual_coords, 
-            manual_override=manual_override
+            manual_override=manual_override,
+            system_paths_dict=self.system_image_paths
         )
         self.process_thread.progress_update.connect(self.update_progress)
         self.process_thread.finished_data.connect(self.on_batch_finished)
@@ -543,6 +813,7 @@ class MainWindow(QMainWindow):
         output_dir = self.dir_output_base.text()
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
         os.makedirs(res_dir, exist_ok=True)
+        self.fresh_systems.difference_update(folder_list)
 
         if intersection_data:
             try:
@@ -550,26 +821,26 @@ class MainWindow(QMainWindow):
                 df_new["Subfolder ID"] = df_new["Subfolder ID"].astype(str).str.zfill(3)
                 
                 excel_path = os.path.join(res_dir, "All_Boresight_Intersections.xlsx")
-                if os.path.exists(excel_path) and len(folder_list) == 1:
+                if os.path.exists(excel_path) and getattr(self, "_is_manual_run", False):
                     df_old = pd.read_excel(excel_path)
                     df_old["Subfolder ID"] = df_old["Subfolder ID"].astype(str).str.zfill(3)
                     
-                    target_folder = str(folder_list[0]).zfill(3)
-                    df_old = df_old[df_old["Subfolder ID"] != target_folder] 
-                    df_final = pd.concat([df_old, df_new]).sort_values("Subfolder ID")
+                    processed_ids = set(df_new["Subfolder ID"])
+                    df_old = df_old[~df_old["Subfolder ID"].isin(processed_ids)]
+                    df_final = pd.concat([df_old, df_new], ignore_index=True).sort_values("Subfolder ID")
                 else:
-                    df_final = df_new
+                    df_final = df_new.sort_values("Subfolder ID")
                     
                 df_final.to_excel(excel_path, index=False, sheet_name="Intersections")
                 self.logger.info("Processing complete. Saved raw intersections.")
                 
                 self.load_dataframe_to_table(df_final)
-                
+                self.load_selected_folder()
                 if len(folder_list) == 1:
-                    self.load_selected_folder()
                     self.tabs.setCurrentIndex(1) 
             except PermissionError:
                 self.logger.error("Permission Denied: Excel file is open. Close it and try again.")
+                QMessageBox.warning(self, "Permission Denied", "All_Boresight_Intersections.xlsx is open in Excel. Close it and retry.")
             except Exception as e:
                 self.logger.error(f"Failed to save Excel data: {e}")
 
@@ -586,12 +857,26 @@ class MainWindow(QMainWindow):
             return
             
         sys_constants = self.get_system_constants()
-        if not sys_constants: return
+        if not sys_constants:
+            QMessageBox.warning(self, "Invalid Constants", "Please ensure all System Constants contain valid numbers.")
+            return
             
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
         excel_input = os.path.join(res_dir, "All_Boresight_Intersections.xlsx")
         excel_output = os.path.join(res_dir, "CoBoresight_Misalignment_Report.xlsx")
         plot_dir = os.path.join(res_dir, "CoBoresight_Plots")
+
+        if not os.path.isfile(excel_input):
+            QMessageBox.warning(
+                self,
+                "No Processed Data",
+                "No intersection data found yet.\nPlease run Batch Processing or Manual Queue Processing first."
+            )
+            return
+
+        if not self._check_excel_unlocked(res_dir):
+            QMessageBox.warning(self, "Excel File Open", "Please close any open Excel reports before generating the report.")
+            return
         
         self.logger.info("Generating formatted Excel Report...")
         
@@ -611,9 +896,11 @@ class MainWindow(QMainWindow):
                 self.tabs.setCurrentIndex(2)
             else:
                 self.logger.error(f"Report Generation Failed: {msg}")
+                QMessageBox.warning(self, "Report Generation Failed", str(msg))
                 
         except PermissionError:
             self.logger.error("Permission Denied: The CoBoresight Report is likely open in Excel. Please close it.")
+            QMessageBox.warning(self, "Permission Denied", "The CoBoresight Report is currently open in Excel. Please close it.")
         except Exception as e:
             self.logger.error(f"Unexpected error formatting report: {e}")
         finally:
@@ -635,3 +922,11 @@ class MainWindow(QMainWindow):
             self.report_table.resizeColumnsToContents()
         except Exception as e:
             self.logger.error(f"Failed to populate table viewer: {str(e)}")
+
+    def closeEvent(self, event):
+        """Gracefully stops background threads and cleans temporary drop cache on exit."""
+        if self.process_thread and self.process_thread.isRunning():
+            self.process_thread.requestInterruption()
+            self.process_thread.wait(3000)
+        shutil.rmtree(self.drop_cache_dir, ignore_errors=True)
+        super().closeEvent(event)

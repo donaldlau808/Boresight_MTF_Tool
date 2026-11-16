@@ -8,8 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# ... [REST OF YOUR FILE REMAINS EXACTLY THE SAME] ...
-
 # ==============================================================================
 # 1. ROI & MASKING CONFIGURATION
 # ==============================================================================
@@ -172,8 +170,19 @@ def extract_mwir_features(bgr_img: np.ndarray, gray_img: np.ndarray, active_colo
 # ==============================================================================
 # 3. PLOTTING FUNCTIONS
 # ==============================================================================
+def _clip_box(box, img_w, img_h):
+    """Ensures ROI bounds stay within image dimensions and never yield a 0x0 crop."""
+    x_min, x_max, y_min, y_max = box
+    x_min_c = max(0, min(x_min, img_w - 2))
+    x_max_c = max(x_min_c + 1, min(x_max, img_w))
+    y_min_c = max(0, min(y_min, img_h - 2))
+    y_max_c = max(y_min_c + 1, min(y_max, img_h))
+    return (x_min_c, x_max_c, y_min_c, y_max_c)
+
 def plot_mask_diagnostic_original(bgr_img, safe_mask, mast_x, left_edge, right_edge, horizon_y, channel_name, subfolder_name, save_path, roi_box):
-    x_min, x_max, y_min, y_max = roi_box
+    img_h, img_w = bgr_img.shape[:2]
+    x_min, x_max, y_min, y_max = _clip_box(roi_box, img_w, img_h)
+    
     fig, axes = plt.subplots(1, 3, figsize=(16, 6), dpi=150)
     
     crop_rgb = cv2.cvtColor(bgr_img[y_min:y_max, x_min:x_max], cv2.COLOR_BGR2RGB)
@@ -205,15 +214,19 @@ def plot_mask_diagnostic_original(bgr_img, safe_mask, mast_x, left_edge, right_e
         ax.grid(True, linestyle=":", alpha=0.5)
     
     plt.tight_layout()
-    plt.savefig(save_path, bbox_inches="tight")
+    try:
+        plt.savefig(save_path, bbox_inches="tight")
+    except PermissionError:
+        pass
     plt.close()
 
 
 def plot_and_save_side_by_side_original(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_mast, mwir_horizon, subfolder_name, save_path, eon_box, mwir_box):
+    img_h, img_w = rgb_eon.shape[:2]
+    e_x_min, e_x_max, e_y_min, e_y_max = _clip_box(eon_box, img_w, img_h)
+    m_x_min, m_x_max, m_y_min, m_y_max = _clip_box(mwir_box, img_w, img_h)
+    
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 8), dpi=150)
-
-    e_x_min, e_x_max, e_y_min, e_y_max = eon_box
-    m_x_min, m_x_max, m_y_min, m_y_max = mwir_box
 
     crop_eon = rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max]
     ax1.imshow(crop_eon, extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation='nearest')
@@ -243,13 +256,17 @@ def plot_and_save_side_by_side_original(rgb_eon, rgb_mwir, eon_mast, eon_horizon
 
     plt.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=13, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(save_path, bbox_inches="tight")
+    try:
+        plt.savefig(save_path, bbox_inches="tight")
+    except PermissionError:
+        pass
     plt.close()
 
 
 def plot_mask_diagnostic_zoomed(bgr_img, safe_mask, mast_x, left_edge, right_edge, horizon_y, channel_name, subfolder_name, save_path, roi_box):
-    x_min, x_max, y_min, y_max = roi_box
     img_h, img_w = bgr_img.shape[:2]
+    x_min, x_max, y_min, y_max = _clip_box(roi_box, img_w, img_h)
+    
     dpi = 100 
     fig_w, fig_h = img_w / dpi, img_h / dpi
     
@@ -284,18 +301,22 @@ def plot_mask_diagnostic_zoomed(bgr_img, safe_mask, mast_x, left_edge, right_edg
         ax.grid(True, linestyle=":", alpha=0.5)
     
     plt.tight_layout()
-    plt.savefig(save_path, dpi=dpi)
+    try:
+        plt.savefig(save_path, dpi=dpi)
+    except PermissionError:
+        pass
     plt.close()
 
 
 def plot_and_save_side_by_side_zoomed(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_mast, mwir_horizon, subfolder_name, save_path, eon_box, mwir_box):
     img_h, img_w = rgb_eon.shape[:2]
+    e_x_min, e_x_max, e_y_min, e_y_max = _clip_box(eon_box, img_w, img_h)
+    m_x_min, m_x_max, m_y_min, m_y_max = _clip_box(mwir_box, img_w, img_h)
+    
     dpi = 100 
     fig_w, fig_h = img_w / dpi, img_h / dpi
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(fig_w, fig_h), dpi=dpi)
-    e_x_min, e_x_max, e_y_min, e_y_max = eon_box
-    m_x_min, m_x_max, m_y_min, m_y_max = mwir_box
 
     crop_eon = rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max]
     ax1.imshow(crop_eon, extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation='nearest')
@@ -327,7 +348,10 @@ def plot_and_save_side_by_side_zoomed(rgb_eon, rgb_mwir, eon_mast, eon_horizon, 
 
     plt.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=20, fontweight="bold")
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(save_path, dpi=dpi)
+    try:
+        plt.savefig(save_path, dpi=dpi)
+    except PermissionError:
+        pass
     plt.close()
 
 

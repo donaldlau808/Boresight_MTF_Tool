@@ -64,7 +64,10 @@ def create_misalignment_plot(val_x, val_y, max_scale, unit, plot_type, title_tex
     
     plt.title(title_text, fontsize=8.5, fontweight='bold', color='#1e293b', pad=8)
     plt.tight_layout()
-    plt.savefig(save_path, transparent=True, bbox_inches='tight')
+    try:
+        plt.savefig(save_path, transparent=True, bbox_inches='tight')
+    except PermissionError:
+        pass  # File is read-only/locked by OS, skip plot generation
     plt.close(fig)
 
 
@@ -81,6 +84,9 @@ def generate_report(excel_input_path: str, excel_output_path: str, plot_dir: str
     MWIR_NATIVE_PITCH_MM = float(sys_constants.get('pixel_pitch', 0.010))
     MWIR_NATIVE_W_PX = float(sys_constants.get('native_width', 1280.0))
 
+    if RANGE_M <= 0 or MWIR_FOCAL_LEN_MM <= 0:
+        return False, "Target Range and Focal Length must be greater than zero to avoid division by zero.", None
+
     PLOT_MAX_SCALE_M = 1.0     
     PLOT_MAX_SCALE_MRAD = (PLOT_MAX_SCALE_M / RANGE_M) * 1000.0  
 
@@ -88,7 +94,7 @@ def generate_report(excel_input_path: str, excel_output_path: str, plot_dir: str
     df = pd.read_excel(excel_input_path)
     
     # -------------------------------------------------------------------------
-    # STRICT COLUMN ORDER ENFORCEMENT
+    # STRICT COLUMN ORDER ENFORCEMENT & VALIDATION
     # -------------------------------------------------------------------------
     expected_cols = [
         "Subfolder ID", 
@@ -98,9 +104,9 @@ def generate_report(excel_input_path: str, excel_output_path: str, plot_dir: str
         "MWIR Horizon Y", 
         "Status"
     ]
-    for col in expected_cols:
-        if col not in df.columns:
-            df[col] = np.nan
+    if not set(expected_cols).issubset(df.columns):
+        return False, "Input Excel is missing required CoBoresight intersection columns.", None
+
     df = df[expected_cols]
 
     cols_to_clean = ['EON Mast Center X', 'EON Horizon Y', 'MWIR Mast Center X', 'MWIR Horizon Y']
@@ -248,10 +254,10 @@ def generate_report(excel_input_path: str, excel_output_path: str, plot_dir: str
         ws[f'{col}10'].font = BOLD_FONT
     
     formulas = [
-        ("Pixel Offset", "Δpx", "px", "Δpx = MWIR_Coord - EON_Coord"),
+        ("Pixel Offset", "Î”px", "px", "Î”px = MWIR_Coord - EON_Coord"),
         ("Canvas GSD", "GSD", "m/px", "GSD = ((Pitch * (NativeW / CanvasW)) / FocalLength) * Range"),
-        ("Target Misalignment", "Δm", "m", "Δm = Δpx * GSD"),
-        ("Co-Boresight Angle", "mrad_err", "mrad", "mrad_err = (Δm / Range) * 1000")
+        ("Target Misalignment", "Î”m", "m", "Î”m = Î”px * GSD"),
+        ("Co-Boresight Angle", "mrad_err", "mrad", "mrad_err = (Î”m / Range) * 1000")
     ]
     
     for r_idx, (param, ref, unit, eq) in enumerate(formulas, start=11):
@@ -303,6 +309,8 @@ def generate_report(excel_input_path: str, excel_output_path: str, plot_dir: str
             continue
             
         for offset, img_path in enumerate(paths):
+            if not os.path.exists(img_path):
+                continue
             img = Image(img_path)
             img.width, img.height = 210, 210
             col_letter = get_column_letter(start_img_col + offset)

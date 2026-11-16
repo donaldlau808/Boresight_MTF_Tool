@@ -1,3 +1,4 @@
+import os
 from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QApplication
 from PySide6.QtGui import QPixmap, QImage, QPen, QColor, QPainter
 from PySide6.QtCore import Qt, Signal, QRectF
@@ -16,6 +17,7 @@ class ResizableImageLabel(QGraphicsView):
         self.setStyleSheet("background-color: #1e1e1e; border: 1px solid #555;")
         self.zoom_factor = 1.0
         self.current_pixmap = None
+        self.placeholder_text = ""
 
     def set_image(self, image_path):
         img = QImage(image_path)
@@ -36,6 +38,18 @@ class ResizableImageLabel(QGraphicsView):
         self.pixmap_item.setPixmap(QPixmap()) 
         self.scene.setSceneRect(QRectF(0, 0, 1, 1))
         self.viewport().update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.current_pixmap is None and self.placeholder_text:
+            painter = QPainter(self.viewport())
+            painter.setPen(QColor("#a1a1aa"))
+            font = painter.font()
+            font.setPointSize(11)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(self.viewport().rect(), Qt.AlignCenter, self.placeholder_text)
+            painter.end()
 
     def wheelEvent(self, event):
         if QApplication.keyboardModifiers() == Qt.ControlModifier:
@@ -67,6 +81,7 @@ class ClickableLabel(ResizableImageLabel):
     def __init__(self, channel_name, parent=None):
         super().__init__(parent)
         self.channel_name = channel_name
+        self.placeholder_text = f"Drag and drop {channel_name} image"
         self.clicked_pt = None
         self.crosshair_lines = []
         
@@ -101,9 +116,10 @@ class ClickableLabel(ResizableImageLabel):
         if urls:
             for url in urls:
                 if url.isLocalFile():
-                    file_path = url.toLocalFile()
+                    file_path = os.path.normpath(url.toLocalFile())
                     # Verify it is an image file
                     if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')):
+                        event.acceptProposedAction()
                         self.image_dropped.emit(self.channel_name, file_path)
                         break # Only process the first image if they drag multiple
 
