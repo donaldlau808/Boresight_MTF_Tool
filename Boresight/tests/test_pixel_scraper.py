@@ -4,7 +4,7 @@ import numpy as np
 from core import pixel_scraper
 
 def test_missing_images_failure_mode(tmp_path):
-    """Verifies graceful handling when input image paths do not exist."""
+    """Verifies graceful handling and error reporting when input image paths do not exist."""
     out_dir = str(tmp_path / "outputs")
     colors = {'orange': False, 'green': False, 'white': False}
     
@@ -17,7 +17,9 @@ def test_missing_images_failure_mode(tmp_path):
         colors
     )
     assert success is False
-    assert result is None
+    assert isinstance(result, dict)
+    assert result["Subfolder ID"] == "001"
+    assert "ERROR" in result["Status"]
 
 def test_manual_override_processing(tmp_path):
     """Verifies end-to-end image pair processing with synthetic images and manual coordinates."""
