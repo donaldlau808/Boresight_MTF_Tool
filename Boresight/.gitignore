@@ -1,0 +1,15 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Application Specific
+Boresight_Outputs/
+Boresight_Workspace/
+boresight_app.log
+*.xlsx
