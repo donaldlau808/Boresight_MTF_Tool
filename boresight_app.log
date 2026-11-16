@@ -1,0 +1,184 @@
+13:15:58 - INFO - Ready. Please select the base project directory.
+13:16:32 - WARNING - Could not find 'EON' folder in C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS
+13:16:46 - INFO - Loaded 9 folders from dataset.
+13:16:54 - INFO - Processing Folder [017]...
+13:16:59 - INFO - Processing Folder [018]...
+13:17:04 - INFO - Processing Folder [019]...
+13:17:06 - WARNING - Cancel requested... stopping after current folder.
+13:17:10 - INFO - Cancelled during folder [023].
+13:17:10 - INFO - Processing complete. Saved raw intersections.
+13:17:26 - INFO - Generating formatted Excel Report...
+13:17:28 - ERROR - Permission Denied: The CoBoresight Report is likely open in Excel. Please close it.
+13:17:35 - INFO - Generating formatted Excel Report...
+13:17:37 - INFO - Report Generated: C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS/Boresight/M2_Camera/Test Material\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+13:20:10 - INFO - Ready. Please select the base project directory.
+13:20:26 - INFO - Loaded 9 folders from dataset.
+13:20:29 - INFO - Processing Folder [017]...
+13:20:32 - INFO - Processing Folder [018]...
+13:20:33 - WARNING - Cancel requested... stopping after current folder.
+13:20:37 - INFO - Cancelled during folder [019].
+13:20:37 - INFO - Processing complete. Saved raw intersections.
+13:20:39 - INFO - Generating formatted Excel Report...
+13:20:41 - INFO - Report Generated: C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS/Boresight/M2_Camera/Test Material\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+13:22:12 - INFO - Ready. Please select the base project directory.
+13:22:22 - INFO - Loaded 9 folders from dataset.
+13:22:30 - INFO - Processing Folder [017]...
+13:22:34 - INFO - Processing Folder [018]...
+13:22:38 - INFO - Processing Folder [019]...
+13:22:38 - WARNING - Cancel requested... stopping after current folder.
+13:22:42 - INFO - Cancelled during folder [023].
+13:22:42 - INFO - Processing complete. Saved raw intersections.
+13:22:45 - INFO - Generating formatted Excel Report...
+13:22:47 - INFO - Report Generated: C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS/Boresight/M2_Camera/Test Material\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+13:26:51 - INFO - Ready. Please select the base project directory.
+13:27:01 - INFO - Loaded 9 folders from dataset.
+13:27:15 - INFO - Processing Folder [017]...
+13:27:19 - INFO - Processing Folder [018]...
+13:27:20 - WARNING - Cancel requested... stopping after current folder.
+13:27:23 - INFO - Cancelled during folder [019].
+13:27:24 - INFO - Processing complete. Saved raw intersections.
+13:27:35 - INFO - Generating formatted Excel Report...
+13:27:37 - INFO - Report Generated: C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS/Boresight/M2_Camera/Test Material\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+13:38:13 - INFO - Ready. Please select the base project directory.
+13:38:35 - INFO - Loaded 9 folders from dataset.
+13:38:43 - INFO - Cleared stale files from Boresight_Outputs.
+13:38:43 - INFO - Processing Folder [017]...
+13:38:48 - INFO - Processing Folder [018]...
+13:38:49 - WARNING - Cancel requested... stopping after current folder.
+13:38:53 - INFO - Cancelled during folder [019].
+13:38:53 - INFO - Processing complete. Saved raw intersections.
+13:43:16 - INFO - Ready. Please select the base project directory.
+13:43:29 - INFO - Loaded 9 folders from dataset.
+13:43:41 - INFO - Cleared stale files from Boresight_Outputs.
+13:43:41 - INFO - Processing Folder [017]...
+13:43:45 - INFO - Processing Folder [018]...
+13:43:49 - INFO - Processing Folder [019]...
+13:43:51 - WARNING - Cancel requested... stopping after current folder.
+13:43:53 - INFO - Cancelled during folder [023].
+13:43:53 - INFO - Processing complete. Saved raw intersections.
+13:44:12 - INFO - Cleared stale files from Boresight_Outputs.
+13:44:12 - INFO - Processing Folder [017]...
+13:44:13 - WARNING - Cancel requested... stopping after current folder.
+13:44:16 - INFO - Cancelled during folder [018].
+13:44:16 - INFO - Processing complete. Saved raw intersections.
+13:44:25 - INFO - Generating formatted Excel Report...
+13:44:26 - INFO - Report Generated: C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS/Boresight/M2_Camera/Test Material\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+13:45:22 - INFO - Registered EON manual coordinate: (953, 539)
+13:45:26 - INFO - Registered MWIR manual coordinate: (953, 540)
+13:45:29 - INFO - Processing Folder [028]...
+13:45:33 - INFO - Processing complete. Saved raw intersections.
+13:45:57 - INFO - Generating formatted Excel Report...
+13:45:59 - INFO - Report Generated: C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS/Boresight/M2_Camera/Test Material\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+14:32:20 - INFO - Cleared stale files from Boresight_Outputs.
+14:32:20 - INFO - Processing Folder [017]...
+14:32:24 - INFO - Processing Folder [018]...
+14:32:25 - WARNING - Cancel requested... stopping after current folder.
+14:32:28 - INFO - Cancelled during folder [019].
+14:32:28 - INFO - Processing complete. Saved raw intersections.
+14:39:49 - INFO - Ready. Please select the base project directory.
+14:40:04 - INFO - Loaded 9 folders from dataset.
+14:40:08 - INFO - Cleared stale files from Boresight_Outputs.
+14:40:08 - INFO - Processing Folder [017]...
+14:40:12 - INFO - Processing Folder [018]...
+14:40:13 - WARNING - Cancel requested... stopping after current folder.
+14:40:16 - INFO - Cancelled during folder [019].
+14:40:16 - INFO - Processing complete. Saved raw intersections.
+14:40:29 - INFO - Registered EON manual coordinate: (959, 549)
+14:40:31 - INFO - Registered MWIR manual coordinate: (960, 549)
+14:40:34 - INFO - Processing Folder [024]...
+14:40:38 - INFO - Processing complete. Saved raw intersections.
+14:43:11 - INFO - Ready. Please select the base project directory.
+14:43:39 - INFO - Loaded 9 folders from dataset.
+14:43:41 - INFO - Cleared stale files from Boresight_Outputs.
+14:43:41 - INFO - Processing Folder [017]...
+14:43:45 - INFO - Processing Folder [018]...
+14:43:47 - WARNING - Cancel requested... stopping after current folder.
+14:43:48 - INFO - Cancelled during folder [019].
+14:43:48 - INFO - Processing complete. Saved raw intersections.
+14:44:07 - INFO - Registered EON manual coordinate: (961, 550)
+14:44:11 - INFO - Registered MWIR manual coordinate: (960, 549)
+14:44:19 - INFO - Cleared stale files from Boresight_Outputs.
+14:44:19 - INFO - Processing Folder [024]...
+14:44:24 - INFO - Processing complete. Saved raw intersections.
+14:44:49 - INFO - Generating formatted Excel Report...
+14:44:50 - INFO - Report Generated: C:/Users/donald.lau/Desktop/Archive/LAST KNOWN WORKING BORESIGHT SCRIPTS/Boresight/M2_Camera/Test Material\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+15:00:07 - INFO - Ready. Please select the base project directory or drag and drop images.
+15:00:35 - INFO - Auto-created working directory at C:\Users\donald.lau\Desktop\Boresight_Dev_Env\Boresight_Workspace
+15:00:40 - INFO - Routed Screenshot 2025-08-19 105932.png to -> EON/021
+15:00:40 - INFO - Loaded 1 system numbers.
+15:00:49 - INFO - Routed 018.png to -> MWIR/021
+15:00:49 - INFO - Loaded 1 system numbers.
+15:00:55 - INFO - Registered EON manual coordinate: (960, 537)
+15:00:58 - INFO - Registered MWIR manual coordinate: (958, 534)
+15:00:59 - INFO - Processing Folder [021]...
+15:01:03 - INFO - Processing complete. Saved raw intersections.
+15:01:15 - INFO - Generating formatted Excel Report...
+15:01:16 - INFO - Report Generated: C:\Users\donald.lau\Desktop\Boresight_Dev_Env\Boresight_Workspace\Boresight_Outputs\CoBoresight_Misalignment_Report.xlsx
+15:07:48 - INFO - Ready. Select Input/Output directories or drop images to begin.
+15:08:11 - INFO - Loaded 9 system numbers.
+15:08:19 - INFO - Registered EON manual coordinate: (959, 546)
+15:08:22 - INFO - Registered MWIR manual coordinate: (966, 547)
+15:08:24 - INFO - Cleared stale files from Boresight_Outputs.
+15:08:24 - INFO - Processing Folder [017]...
+15:08:28 - INFO - Processing complete. Saved raw intersections.
+15:08:35 - INFO - Registered EON manual coordinate: (964, 536)
+15:08:37 - INFO - Registered MWIR manual coordinate: (959, 535)
+15:08:41 - INFO - Cleared stale files from Boresight_Outputs.
+15:08:41 - INFO - Processing Folder [018]...
+15:08:45 - INFO - Processing complete. Saved raw intersections.
+15:08:55 - INFO - Registered EON manual coordinate: (959, 543)
+15:08:57 - INFO - Registered MWIR manual coordinate: (966, 544)
+15:09:00 - INFO - Registered EON manual coordinate: (962, 534)
+15:09:02 - INFO - Registered MWIR manual coordinate: (960, 530)
+15:09:05 - INFO - Cleared stale files from Boresight_Outputs.
+15:09:05 - INFO - Processing Folder [018]...
+15:09:09 - INFO - Processing complete. Saved raw intersections.
+15:09:28 - INFO - Cleared stale files from Boresight_Outputs.
+15:09:28 - INFO - Processing Folder [017]...
+15:09:33 - INFO - Processing Folder [018]...
+15:09:37 - WARNING - Cancel requested... stopping after current folder.
+15:09:37 - INFO - Cancelled during folder [019].
+15:09:37 - INFO - Processing complete. Saved raw intersections.
+15:10:00 - INFO - Registered EON manual coordinate: (965, 542)
+15:10:03 - INFO - Registered MWIR manual coordinate: (961, 541)
+15:10:08 - INFO - Cleared stale files from Boresight_Outputs.
+15:10:08 - INFO - Processing Folder [032]...
+15:10:13 - INFO - Processing complete. Saved raw intersections.
+15:10:40 - INFO - Deleted data for System 019
+15:10:40 - INFO - Loaded 8 system numbers.
+15:10:44 - INFO - Deleted data for System 028
+15:10:44 - INFO - Loaded 7 system numbers.
+15:10:47 - INFO - Deleted data for System 032
+15:10:47 - INFO - Loaded 6 system numbers.
+15:10:49 - INFO - Deleted data for System 018
+15:10:49 - INFO - Loaded 5 system numbers.
+15:10:52 - INFO - Deleted data for System 017
+15:10:52 - INFO - Loaded 4 system numbers.
+15:10:55 - INFO - Deleted data for System 027
+15:10:55 - INFO - Loaded 3 system numbers.
+15:10:58 - INFO - Deleted data for System 026
+15:10:58 - INFO - Loaded 2 system numbers.
+15:14:27 - INFO - Loaded 9 system numbers.
+15:14:52 - INFO - Ready. Select Input/Output directories or drop images to begin.
+15:23:10 - INFO - Ready. Select Input/Output directories or drop images to begin.
+15:23:48 - INFO - Loaded 9 system numbers.
+15:23:54 - INFO - Registered System 017 EON manual coordinate: (958, 546)
+15:23:57 - INFO - Registered System 017 MWIR manual coordinate: (967, 547)
+15:24:00 - INFO - Registered System 018 EON manual coordinate: (983, 535)
+15:24:02 - INFO - Registered System 018 EON manual coordinate: (961, 537)
+15:24:05 - INFO - Registered System 018 MWIR manual coordinate: (958, 536)
+15:24:06 - INFO - Cleared stale files from Boresight_Outputs.
+15:24:06 - INFO - Processing Folder [017]...
+15:24:10 - INFO - Processing Folder [018]...
+15:24:15 - INFO - Processing complete. Saved raw intersections.
+15:24:34 - INFO - Registered System 024 EON manual coordinate: (962, 549)
+15:24:36 - INFO - Registered System 024 MWIR manual coordinate: (961, 549)
+15:24:37 - INFO - Cleared stale files from Boresight_Outputs.
+15:24:37 - INFO - Processing Folder [024]...
+15:24:42 - INFO - Processing complete. Saved raw intersections.
+15:25:01 - INFO - Cleared stale files from Boresight_Outputs.
+15:25:01 - INFO - Processing Folder [017]...
+15:25:05 - INFO - Processing Folder [018]...
+15:25:06 - WARNING - Cancel requested... stopping after current folder.
+15:25:10 - INFO - Cancelled during folder [019].
+15:25:10 - INFO - Processing complete. Saved raw intersections.
