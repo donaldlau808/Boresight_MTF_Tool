@@ -27,11 +27,12 @@ jobs:
         pip install pytest pyinstaller
 
     - name: Run Automated Tests
+      env:
+        PYTHONPATH: Boresight
       run: |
-        pytest tests/ -v
+        pytest Boresight/tests/ -v
 
     - name: Build Windows Executable
-      # This step only runs if the pytest step above passes successfully
       run: |
         pyinstaller BoresightTool.spec --clean
 
