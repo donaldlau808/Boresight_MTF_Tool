@@ -67,14 +67,19 @@ class MainWindow(QMainWindow):
         form_layout = QHBoxLayout()
         form1 = QFormLayout()
         self.inp_range = QLineEdit()
+        self.inp_range.setReadOnly(True)
         self.inp_focal = QLineEdit()
+        self.inp_focal.setReadOnly(True)
         form1.addRow("Target Range (m):", self.inp_range)
         form1.addRow("MWIR Focal Length (mm):", self.inp_focal)
         
         form2 = QFormLayout()
         self.inp_pitch = QLineEdit()
+        self.inp_pitch.setReadOnly(True)
         self.inp_mwir_w = QLineEdit()
+        self.inp_mwir_w.setReadOnly(True)
         self.inp_canvas_w = QLineEdit()
+        self.inp_canvas_w.setReadOnly(True)
         form2.addRow("MWIR Native Pitch (mm):", self.inp_pitch)
         form2.addRow("MWIR Native Width (px):", self.inp_mwir_w)
         form2.addRow("Screenshot Canvas Width (px):", self.inp_canvas_w)
@@ -189,8 +194,11 @@ class MainWindow(QMainWindow):
         self.color_group = QGroupBox("Crosshair Colors")
         color_layout = QVBoxLayout(self.color_group)
         self.chk_orange = QCheckBox("Orange Crosshair")
+        self.chk_orange.stateChanged.connect(self.invalidate_report)
         self.chk_green = QCheckBox("Green Crosshair")
+        self.chk_green.stateChanged.connect(self.invalidate_report)
         self.chk_white = QCheckBox("White Crosshair")
+        self.chk_white.stateChanged.connect(self.invalidate_report)
         color_layout.addWidget(self.chk_orange)
         color_layout.addWidget(self.chk_green)
         color_layout.addWidget(self.chk_white)
@@ -236,6 +244,10 @@ class MainWindow(QMainWindow):
         self.load_profile()
         self.toggle_advanced_mode()
         self.logger.info("Ready. Select Input directory or drop images to begin.")
+
+    def invalidate_report(self, *args, **kwargs):
+        """Greys out the Excel Report button if the queue or parameters change."""
+        self.btn_gen_report.setEnabled(False)
 
     def toggle_advanced_mode(self):
         adv_active = self.chk_advanced.isChecked()
@@ -366,6 +378,8 @@ class MainWindow(QMainWindow):
         if items:
             if self.folder_list.currentItem() == items[0]: self.load_selected_folder()
             else: self.folder_list.setCurrentItem(items[0])
+            
+        self.invalidate_report()
 
     def remove_selected_system(self):
         if not self.folder_list.currentItem():
@@ -380,6 +394,7 @@ class MainWindow(QMainWindow):
         for ch in ("EON", "MWIR"): shutil.rmtree(os.path.join(self.drop_cache_dir, ch, system_num), ignore_errors=True)
         self.logger.info(f"Removed System {system_num} from current processing queue.")
         if self.folder_list.count() == 0: self._clear_all_viewports()
+        self.invalidate_report()
 
     def append_log(self, level, msg):
         color = "#000000"
@@ -475,6 +490,7 @@ class MainWindow(QMainWindow):
             return
         self.logger.info(f"Loaded {loaded_count} complete system pairs.")
         self.folder_list.setCurrentRow(0)
+        self.invalidate_report()
 
     def load_selected_folder(self):
         if not self.folder_list.currentItem(): return
@@ -514,6 +530,7 @@ class MainWindow(QMainWindow):
         system_num = self.folder_list.currentItem().text()
         self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
         self.eon_label.clear_markup(); self.mwir_label.clear_markup(); self.update_manual_status_label()
+        self.invalidate_report()
 
     def clear_all_manual_coords(self):
         for sys_num in self.system_manual_coords:
@@ -522,6 +539,7 @@ class MainWindow(QMainWindow):
         self.mwir_label.clear_markup()
         self.update_manual_status_label()
         self.logger.info("Cleared manual coordinates for all queued systems.")
+        self.invalidate_report()
 
     def register_click(self, channel, x, y):
         if not self.folder_list.currentItem(): return
@@ -532,6 +550,7 @@ class MainWindow(QMainWindow):
             self.system_manual_coords[system_num]['mwir_x'] = x; self.system_manual_coords[system_num]['mwir_y'] = y
         self.update_manual_status_label()
         self.logger.info(f"Registered System {system_num} {channel} manual coordinate: ({x}, {y})")
+        self.invalidate_report()
 
     def update_manual_status_label(self):
         if not self.folder_list.currentItem():
@@ -595,7 +614,6 @@ class MainWindow(QMainWindow):
             return
         
         QMessageBox.information(self, "Output Required", "Please browse and select a destination folder for this run's outputs.")
-        self.dir_output_base.clear()
         if not self.browse_output_directory(): return
 
         res_dir = os.path.join(self.dir_output_base.text(), "Boresight_Outputs")
@@ -615,7 +633,6 @@ class MainWindow(QMainWindow):
             return
             
         QMessageBox.information(self, "Output Required", "Please browse and select a destination folder for this run's outputs.")
-        self.dir_output_base.clear()
         if not self.browse_output_directory(): return
 
         if not self.clear_output_directory(): return
@@ -674,6 +691,7 @@ class MainWindow(QMainWindow):
                 self.logger.info("Processing complete. Saved raw intersections.")
                 self.load_dataframe_to_table(df_final)
                 self.load_selected_folder()
+                self.btn_gen_report.setEnabled(True)
                 if len(folder_list) == 1: self.tabs.setCurrentIndex(1) 
             except PermissionError:
                 self.logger.error("Permission Denied: Excel file is open. Close it and try again.")

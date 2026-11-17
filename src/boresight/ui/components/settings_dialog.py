@@ -60,6 +60,10 @@ class SettingsDialog(QDialog):
         user_form.addRow("Canvas Width (px):", self.user_canvas)
         profile_layout.addWidget(self.user_group)
         
+        self.btn_reset_profiles = QPushButton("Restore Factory Profile Defaults")
+        self.btn_reset_profiles.clicked.connect(self.reset_profile_defaults)
+        profile_layout.addWidget(self.btn_reset_profiles)
+        
         self.tabs.addTab(self.tab_profiles, "System Profiles")
 
         # ---------------------------------------------------------
@@ -102,6 +106,25 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(self.btn_save)
         btn_layout.addWidget(self.btn_cancel)
         main_layout.addLayout(btn_layout)
+
+    def reset_profile_defaults(self):
+        self.nz_range.setText("3880.75")
+        self.nz_focal.setText("420.0")
+        self.nz_pitch.setText("0.010")
+        self.nz_mwir_w.setText("1280.0")
+        self.nz_canvas.setText("3840.0")
+        
+        self.boulder_range.setText("4500.0")
+        self.boulder_focal.setText("420.0")
+        self.boulder_pitch.setText("0.010")
+        self.boulder_mwir_w.setText("1280.0")
+        self.boulder_canvas.setText("3840.0")
+        
+        self.user_range.setText("3880.75")
+        self.user_focal.setText("420.0")
+        self.user_pitch.setText("0.010")
+        self.user_mwir_w.setText("1280.0")
+        self.user_canvas.setText("3840.0")
 
     def reset_roi_defaults(self):
         defaults = {

@@ -10,6 +10,7 @@ a = Analysis(
     hiddenimports=[
         'pandas', 
         'openpyxl', 
+        'xlsxwriter',
         'cv2', 
         'matplotlib'
     ],
