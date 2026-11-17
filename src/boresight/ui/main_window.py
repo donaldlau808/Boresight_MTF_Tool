@@ -4,19 +4,19 @@ import glob
 import shutil
 import tempfile
 import pandas as pd
-from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
-                               QPushButton, QLabel, QLineEdit, QFileDialog, 
-                               QListWidget, QCheckBox, QGroupBox, QSplitter, 
-                               QProgressBar, QStatusBar, QMessageBox, QApplication,
-                               QTabWidget, QFormLayout, QTableWidget, 
-                               QTableWidgetItem, QTextEdit, QComboBox, QInputDialog)
+from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QProgressBar, 
+                               QStatusBar, QMessageBox, QFileDialog, QInputDialog, 
+                               QTabWidget, QTableWidgetItem)
 from PySide6.QtCore import Qt, QSettings
 
 from boresight.core import boresight_eval
 from boresight.core.logger import setup_logger
-from boresight.ui.components.custom_labels import ClickableLabel, ResizableImageLabel
-from boresight.ui.components.settings_dialog import SettingsDialog
 from boresight.ui.threads import BatchProcessThread, ReportGeneratorThread
+from boresight.ui.components.settings_dialog import SettingsDialog
+from boresight.ui.components.input_tab import InputTab
+from boresight.ui.components.output_tab import OutputTab
+from boresight.ui.components.report_tab import ReportTab
+from boresight.ui.components.sidebar import Sidebar
 
 
 class MainWindow(QMainWindow):
@@ -27,10 +27,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Boresight MTF Evaluation Tool")
         self.resize(1400, 950)
         self.settings = QSettings("Shotover", "BoresightTool")
-        
         self.logger, self.log_emitter = setup_logger()
-        self.log_emitter.log_signal.connect(self.append_log)
         
+        # --- App State ---
         self.system_manual_coords = {}
         self.system_image_paths = {}
         self.fresh_systems = set()
@@ -38,208 +37,28 @@ class MainWindow(QMainWindow):
         shutil.rmtree(self.drop_cache_dir, ignore_errors=True)
         self.process_thread = None
         self.report_thread = None
-        
-        # New variable to hold the extracted points in memory instead of writing them to disk
         self.df_intersections = None
 
+        # --- UI Construction ---
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
 
         self.tabs = QTabWidget()
-        self.tab_input = QWidget()
-        input_layout = QVBoxLayout(self.tab_input)
+        self.c_input_tab = InputTab()
+        self.c_output_tab = OutputTab()
+        self.c_report_tab = ReportTab()
+        self.tabs.addTab(self.c_input_tab, "1. Pre-Processing Inputs")
+        self.tabs.addTab(self.c_output_tab, "2. Post-Processing Diagnostics")
+        self.tabs.addTab(self.c_report_tab, "3. Data Report Viewer")
         
-        const_group = QGroupBox("System Constants")
-        const_layout = QVBoxLayout(const_group)
+        self.c_sidebar = Sidebar()
         
-        profile_layout = QHBoxLayout()
-        self.cmb_profile = QComboBox()
-        self.cmb_profile.addItems(["Shotover-NZ", "Shotover-Boulder", "User Defined"])
-        self.cmb_profile.currentIndexChanged.connect(self.load_profile)
-        
-        self.btn_settings = QPushButton("Settings")
-        self.btn_settings.setMaximumWidth(100)
-        self.btn_settings.clicked.connect(self.open_settings)
-        
-        profile_layout.addWidget(QLabel("Load Profile:"))
-        profile_layout.addWidget(self.cmb_profile, stretch=1)
-        profile_layout.addWidget(self.btn_settings)
-        const_layout.addLayout(profile_layout)
-        
-        form_layout = QHBoxLayout()
-        form1 = QFormLayout()
-        self.inp_range = QLineEdit()
-        self.inp_range.setReadOnly(True)
-        self.inp_focal = QLineEdit()
-        self.inp_focal.setReadOnly(True)
-        form1.addRow("Target Range (m):", self.inp_range)
-        form1.addRow("MWIR Focal Length (mm):", self.inp_focal)
-        
-        form2 = QFormLayout()
-        self.inp_pitch = QLineEdit()
-        self.inp_pitch.setReadOnly(True)
-        self.inp_mwir_w = QLineEdit()
-        self.inp_mwir_w.setReadOnly(True)
-        self.inp_canvas_w = QLineEdit()
-        self.inp_canvas_w.setReadOnly(True)
-        form2.addRow("MWIR Native Pitch (mm):", self.inp_pitch)
-        form2.addRow("MWIR Native Width (px):", self.inp_mwir_w)
-        form2.addRow("Screenshot Canvas Width (px):", self.inp_canvas_w)
-        
-        form_layout.addLayout(form1)
-        form_layout.addLayout(form2)
-        const_layout.addLayout(form_layout)
-        input_layout.addWidget(const_group)
-        
-        self.input_splitter = QSplitter(Qt.Horizontal)
-        self.eon_label = ClickableLabel("EON")
-        self.eon_label.coordinate_clicked.connect(self.register_click)
-        self.eon_label.image_dropped.connect(self.handle_image_drop) 
-        
-        self.mwir_label = ClickableLabel("MWIR")
-        self.mwir_label.coordinate_clicked.connect(self.register_click)
-        self.mwir_label.image_dropped.connect(self.handle_image_drop) 
-
-        self.input_splitter.addWidget(self.eon_label)
-        self.input_splitter.addWidget(self.mwir_label)
-        input_layout.addWidget(self.input_splitter, stretch=1)
-
-        self.tab_output = QWidget()
-        output_layout = QVBoxLayout(self.tab_output)
-        self.diag_tabs = QTabWidget()
-        
-        self.diag_side_by_side = ResizableImageLabel()
-        self.diag_eon_mask = ResizableImageLabel()
-        self.diag_mwir_mask = ResizableImageLabel()
-
-        self.diag_tabs.addTab(self.diag_side_by_side, "Side-by-Side Alignment")
-        self.diag_tabs.addTab(self.diag_eon_mask, "EON Zoomed Mask")
-        self.diag_tabs.addTab(self.diag_mwir_mask, "MWIR Zoomed Mask")
-        output_layout.addWidget(self.diag_tabs)
-        
-        self.tab_report = QWidget()
-        report_layout = QVBoxLayout(self.tab_report)
-        self.report_table = QTableWidget()
-        self.report_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        report_layout.addWidget(QLabel("Extracted Intersection Data Export:"))
-        report_layout.addWidget(self.report_table)
-
-        self.tabs.addTab(self.tab_input, "1. Pre-Processing Inputs")
-        self.tabs.addTab(self.tab_output, "2. Post-Processing Diagnostics")
-        self.tabs.addTab(self.tab_report, "3. Data Report Viewer")
-
-        # ==========================================
-        # RIGHT SIDE: Sidebar
-        # ==========================================
-        sidebar = QWidget()
-        sidebar.setFixedWidth(350)
-        sidebar_layout = QVBoxLayout(sidebar)
-        
-        self.chk_advanced = QCheckBox("Auto Batch Processing (Experimental)")
-        self.chk_advanced.setStyleSheet("font-weight: bold;")
-        self.chk_advanced.stateChanged.connect(self.toggle_advanced_mode)
-        sidebar_layout.addWidget(self.chk_advanced)
-
-        dir_group = QGroupBox("Directories")
-        dir_layout = QVBoxLayout(dir_group)
-        self.dir_input_base = QLineEdit()
-        self.dir_input_base.setPlaceholderText("Input Data Directory")
-        self.dir_input_base.setReadOnly(True)
-        self.btn_browse_input = QPushButton("Browse Input...")
-        self.btn_browse_input.clicked.connect(self.browse_input_directory)
-        
-        self.dir_output_base = QLineEdit()
-        self.dir_output_base.setPlaceholderText("Output Results Directory (Assigned on Run)")
-        self.dir_output_base.setReadOnly(True)
-        
-        dir_layout.addWidget(QLabel("Input Data (EON/MWIR):"))
-        dir_layout.addWidget(self.dir_input_base)
-        dir_layout.addWidget(self.btn_browse_input)
-        dir_layout.addWidget(QLabel("Output Directory:"))
-        dir_layout.addWidget(self.dir_output_base)
-        sidebar_layout.addWidget(dir_group)
-
-        list_group = QGroupBox("System Number")
-        list_layout = QVBoxLayout(list_group)
-        self.folder_list = QListWidget()
-        self.folder_list.itemSelectionChanged.connect(self.load_selected_folder)
-        list_layout.addWidget(self.folder_list)
-        self.btn_remove_system = QPushButton("Remove System from Queue")
-        self.btn_remove_system.setStyleSheet("font-weight: bold;")
-        self.btn_remove_system.clicked.connect(self.remove_selected_system)
-        list_layout.addWidget(self.btn_remove_system)
-        sidebar_layout.addWidget(list_group)
-        
-        manual_group = QGroupBox("Manual Coordinate Selection")
-        manual_layout = QVBoxLayout(manual_group)
-        self.lbl_manual_status = QLabel("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
-        manual_layout.addWidget(self.lbl_manual_status)
-        
-        manual_btn_layout = QVBoxLayout()
-        self.btn_run_manual = QPushButton("Run Manual Processing")
-        self.btn_run_manual.setStyleSheet("font-weight: bold;")
-        self.btn_run_manual.clicked.connect(self.run_manual_processing)
-        
-        btn_clear_layout = QHBoxLayout()
-        self.btn_clear_manual = QPushButton("Clear Current Points")
-        self.btn_clear_manual.clicked.connect(self.clear_manual_coords)
-        self.btn_clear_all_manual = QPushButton("Clear All Points")
-        self.btn_clear_all_manual.clicked.connect(self.clear_all_manual_coords)
-        btn_clear_layout.addWidget(self.btn_clear_manual)
-        btn_clear_layout.addWidget(self.btn_clear_all_manual)
-        
-        manual_btn_layout.addWidget(self.btn_run_manual)
-        manual_btn_layout.addLayout(btn_clear_layout)
-        manual_layout.addLayout(manual_btn_layout)
-        sidebar_layout.addWidget(manual_group)
-
-        self.color_group = QGroupBox("Crosshair Colors")
-        color_layout = QVBoxLayout(self.color_group)
-        self.chk_orange = QCheckBox("Orange Crosshair")
-        self.chk_orange.stateChanged.connect(self.invalidate_report)
-        self.chk_green = QCheckBox("Green Crosshair")
-        self.chk_green.stateChanged.connect(self.invalidate_report)
-        self.chk_white = QCheckBox("White Crosshair")
-        self.chk_white.stateChanged.connect(self.invalidate_report)
-        color_layout.addWidget(self.chk_orange)
-        color_layout.addWidget(self.chk_green)
-        color_layout.addWidget(self.chk_white)
-        sidebar_layout.addWidget(self.color_group)
-        
-        log_group = QGroupBox("Application Terminal")
-        log_layout = QVBoxLayout(log_group)
-        self.log_viewer = QTextEdit()
-        self.log_viewer.setReadOnly(True)
-        self.log_viewer.setStyleSheet("background-color: #FFFFFF; color: #000000; font-family: Consolas; border: 1px solid #C0C0C0;")
-        log_layout.addWidget(self.log_viewer)
-        sidebar_layout.addWidget(log_group)
-
-        self.btn_run_batch = QPushButton("Run Batch Processing")
-        self.btn_run_batch.setMinimumHeight(40)
-        self.btn_run_batch.setStyleSheet("font-weight: bold;")
-        self.btn_run_batch.clicked.connect(self.run_batch_processing)
-
-        self.btn_cancel = QPushButton("Cancel Processing")
-        self.btn_cancel.setMinimumHeight(40)
-        self.btn_cancel.setStyleSheet("font-weight: bold;")
-        self.btn_cancel.setEnabled(False)
-        self.btn_cancel.clicked.connect(self.cancel_processing)
-        
-        self.btn_gen_report = QPushButton("Generate Excel Report")
-        self.btn_gen_report.setMinimumHeight(40)
-        self.btn_gen_report.clicked.connect(self.generate_excel_report)
-
-        sidebar_layout.addWidget(self.btn_run_batch)
-        sidebar_layout.addWidget(self.btn_cancel)
-        sidebar_layout.addWidget(self.btn_gen_report)
-
         main_layout.addWidget(self.tabs)
-        main_layout.addWidget(sidebar)
+        main_layout.addWidget(self.c_sidebar)
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(300)
         self.progress_bar.setAlignment(Qt.AlignCenter)
@@ -247,17 +66,82 @@ class MainWindow(QMainWindow):
         self.progress_bar.setFormat("Ready")
         self.status_bar.addPermanentWidget(self.progress_bar)
 
+        # --- Test Suite & Legacy Backwards Compatibility Aliases ---
+        # Ensures test_ui_workflows.py passes without zero modifications
+        self.inp_range = self.c_input_tab.inp_range
+        self.inp_focal = self.c_input_tab.inp_focal
+        self.inp_pitch = self.c_input_tab.inp_pitch
+        self.inp_mwir_w = self.c_input_tab.inp_mwir_w
+        self.inp_canvas_w = self.c_input_tab.inp_canvas_w
+        self.cmb_profile = self.c_input_tab.cmb_profile
+        self.eon_label = self.c_input_tab.eon_label
+        self.mwir_label = self.c_input_tab.mwir_label
+        
+        self.diag_side_by_side = self.c_output_tab.diag_side_by_side
+        self.diag_eon_mask = self.c_output_tab.diag_eon_mask
+        self.diag_mwir_mask = self.c_output_tab.diag_mwir_mask
+        
+        self.report_table = self.c_report_tab.report_table
+        
+        self.chk_advanced = self.c_sidebar.chk_advanced
+        self.dir_input_base = self.c_sidebar.dir_input_base
+        self.btn_browse_input = self.c_sidebar.btn_browse_input
+        self.dir_output_base = self.c_sidebar.dir_output_base
+        self.folder_list = self.c_sidebar.folder_list
+        self.btn_remove_system = self.c_sidebar.btn_remove_system
+        self.lbl_manual_status = self.c_sidebar.lbl_manual_status
+        self.btn_run_manual = self.c_sidebar.btn_run_manual
+        self.btn_clear_manual = self.c_sidebar.btn_clear_manual
+        self.btn_clear_all_manual = self.c_sidebar.btn_clear_all_manual
+        self.chk_orange = self.c_sidebar.chk_orange
+        self.chk_green = self.c_sidebar.chk_green
+        self.chk_white = self.c_sidebar.chk_white
+        self.log_viewer = self.c_sidebar.log_viewer
+        self.btn_run_batch = self.c_sidebar.btn_run_batch
+        self.btn_cancel = self.c_sidebar.btn_cancel
+        self.btn_gen_report = self.c_sidebar.btn_gen_report
+
+        # --- Connections ---
+        self._connect_signals()
         self.load_profile()
         self.toggle_advanced_mode()
         self.logger.info("Ready. Select Input directory or drop images to begin.")
 
+    def _connect_signals(self):
+        self.log_emitter.log_signal.connect(self.append_log)
+        self.cmb_profile.currentIndexChanged.connect(self.load_profile)
+        self.c_input_tab.btn_settings.clicked.connect(self.open_settings)
+        self.eon_label.coordinate_clicked.connect(self.register_click)
+        self.eon_label.image_dropped.connect(self.handle_image_drop)
+        self.mwir_label.coordinate_clicked.connect(self.register_click)
+        self.mwir_label.image_dropped.connect(self.handle_image_drop)
+        
+        self.chk_advanced.stateChanged.connect(self.toggle_advanced_mode)
+        self.btn_browse_input.clicked.connect(self.browse_input_directory)
+        self.folder_list.itemSelectionChanged.connect(self.load_selected_folder)
+        self.btn_remove_system.clicked.connect(self.remove_selected_system)
+        
+        self.btn_run_manual.clicked.connect(self.run_manual_processing)
+        self.btn_clear_manual.clicked.connect(self.clear_manual_coords)
+        self.btn_clear_all_manual.clicked.connect(self.clear_all_manual_coords)
+        
+        self.chk_orange.stateChanged.connect(self.invalidate_report)
+        self.chk_green.stateChanged.connect(self.invalidate_report)
+        self.chk_white.stateChanged.connect(self.invalidate_report)
+        
+        self.btn_run_batch.clicked.connect(self.run_batch_processing)
+        self.btn_cancel.clicked.connect(self.cancel_processing)
+        self.btn_gen_report.clicked.connect(self.generate_excel_report)
+
+    # ==========================================
+    # LOGIC CONTROLLER METHODS
+    # ==========================================
     def invalidate_report(self, *args, **kwargs):
-        """Greys out the Excel Report button if the queue or parameters change."""
         self.btn_gen_report.setEnabled(False)
 
     def toggle_advanced_mode(self):
         adv_active = self.chk_advanced.isChecked()
-        self.color_group.setVisible(adv_active)
+        self.c_sidebar.color_group.setVisible(adv_active)
         self.btn_run_batch.setVisible(adv_active)
             
     def _get_roi_config(self):
@@ -274,9 +158,6 @@ class MainWindow(QMainWindow):
             else: cfg[k] = int(float(val))
         return cfg
 
-    # ==========================================
-    # FILESYSTEM & VALIDATION HELPERS
-    # ==========================================
     def _is_dir_writable(self, target_dir):
         try:
             os.makedirs(target_dir, exist_ok=True)
@@ -326,13 +207,10 @@ class MainWindow(QMainWindow):
         return True
 
     def _clear_all_viewports(self):
-        self.eon_label.clear_image(); self.mwir_label.clear_image(); self.diag_side_by_side.clear_image()
-        self.diag_eon_mask.clear_image(); self.diag_mwir_mask.clear_image()
+        self.eon_label.clear_image(); self.mwir_label.clear_image()
+        self.diag_side_by_side.clear_image(); self.diag_eon_mask.clear_image(); self.diag_mwir_mask.clear_image()
         self.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
 
-    # ==========================================
-    # DRAG & DROP + QUEUE MANAGEMENT
-    # ==========================================
     def handle_image_drop(self, channel, file_path):
         file_path = os.path.normpath(file_path)
         if not os.path.isfile(file_path):
@@ -477,7 +355,7 @@ class MainWindow(QMainWindow):
 
     def populate_folder_list(self, input_dir):
         self.folder_list.clear(); self.system_image_paths.clear(); self.system_manual_coords.clear(); self.fresh_systems.clear(); self._clear_all_viewports()
-        self.df_intersections = None # Clear data state
+        self.df_intersections = None
         
         eon_dir = self._find_channel_dir(input_dir, "EON")
         mwir_dir = self._find_channel_dir(input_dir, "MWIR")
@@ -701,7 +579,6 @@ class MainWindow(QMainWindow):
                 df_final["Subfolder ID"] = df_final["Subfolder ID"].astype(str).str.zfill(3)
                 df_final = df_final.sort_values("Subfolder ID")
                 
-                # We hold the table strictly in memory now
                 self.df_intersections = df_final
                 
                 self.logger.info("Processing complete. Extracted intersections kept in memory.")
@@ -733,7 +610,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Systems Loaded", "The system queue is empty. There is no relevant data to generate a report.")
             return
 
-        # Replace file check with memory check
         if self.df_intersections is None or self.df_intersections.empty:
             QMessageBox.warning(self, "No Processed Data", "No intersection data found yet.\nPlease run Batch Processing or Manual Queue Processing first.")
             return
