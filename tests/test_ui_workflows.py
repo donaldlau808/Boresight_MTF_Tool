@@ -6,8 +6,7 @@ from PySide6.QtCore import Qt, QMimeData, QUrl, QPointF
 from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 
-from ui.main_window import MainWindow
-
+from boresight.ui.main_window import MainWindow
 
 @pytest.fixture(scope="session")
 def qapp():

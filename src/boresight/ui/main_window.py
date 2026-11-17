@@ -12,11 +12,11 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                                QTableWidgetItem, QTextEdit, QComboBox, QInputDialog)
 from PySide6.QtCore import Qt, QSettings
 
-from core import boresight_eval
-from core.logger import setup_logger
-from ui.components.custom_labels import ClickableLabel, ResizableImageLabel
-from ui.components.settings_dialog import SettingsDialog
-from ui.threads import BatchProcessThread, ReportGeneratorThread
+from boresight.core import boresight_eval
+from boresight.core.logger import setup_logger
+from boresight.ui.components.custom_labels import ClickableLabel, ResizableImageLabel
+from boresight.ui.components.settings_dialog import SettingsDialog
+from boresight.ui.threads import BatchProcessThread, ReportGeneratorThread
 
 
 class MainWindow(QMainWindow):

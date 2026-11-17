@@ -2,8 +2,8 @@ import sys
 import os
 import traceback
 from PySide6.QtWidgets import QApplication, QMessageBox, QFileDialog
-from ui.main_window import MainWindow
-from core.logger import setup_logger
+from boresight.ui.main_window import MainWindow
+from boresight.core.logger import setup_logger
 
 
 def global_exception_handler(exc_type, exc_value, exc_traceback):

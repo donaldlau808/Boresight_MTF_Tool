@@ -2,7 +2,7 @@ import os
 import cv2
 import numpy as np
 import pytest
-from core import pixel_scraper
+from boresight.core import pixel_scraper
 
 def test_missing_images_failure_mode(tmp_path):
     """Verifies graceful handling and error reporting when input image paths do not exist."""

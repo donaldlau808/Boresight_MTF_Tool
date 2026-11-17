@@ -1,7 +1,7 @@
 import pytest
 import os
 import pandas as pd
-from core.boresight_eval import generate_report
+from boresight.core.boresight_eval import generate_report
 
 def test_missing_input_file_failure_mode():
     """Verifies the graceful failure mode when the target Excel file does not exist."""

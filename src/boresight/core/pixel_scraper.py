@@ -1,35 +1,26 @@
 import os
 import cv2
-import glob
 import warnings
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
+# [Keep create_crosshair_masks, get_clean_profile, extract_mast_center_edges, extract_horizon_elevation, extract_eon_features, extract_mwir_features, _clip_box exactly as they were - logic is unchanged]
 def create_crosshair_masks(bgr_img: np.ndarray, active_colors: dict, stroke_dil: int, line_dil: int) -> tuple[np.ndarray, np.ndarray]:
     b = bgr_img[:, :, 0].astype(int); g = bgr_img[:, :, 1].astype(int); r = bgr_img[:, :, 2].astype(int)
-    orange_mask = np.zeros(bgr_img.shape[:2], dtype=np.uint8)
-    green_mask = np.zeros(bgr_img.shape[:2], dtype=np.uint8)
-    white_mask = np.zeros(bgr_img.shape[:2], dtype=np.uint8)
-
-    if active_colors.get('orange'): orange_mask = ((r > 140) & (b < 100) & ((r - b) > 50)).astype(np.uint8)
-    if active_colors.get('green'): green_mask = ((g > 140) & (r < 100) & (b < 100) & ((g - r) > 40)).astype(np.uint8)
-    if active_colors.get('white'): white_mask = ((r > 220) & (g > 220) & (b > 220) & (np.abs(r - g) < 20) & (np.abs(g - b) < 20)).astype(np.uint8)
+    orange_mask = ((r > 140) & (b < 100) & ((r - b) > 50)).astype(np.uint8) if active_colors.get('orange') else np.zeros(bgr_img.shape[:2], dtype=np.uint8)
+    green_mask = ((g > 140) & (r < 100) & (b < 100) & ((g - r) > 40)).astype(np.uint8) if active_colors.get('green') else np.zeros(bgr_img.shape[:2], dtype=np.uint8)
+    white_mask = ((r > 220) & (g > 220) & (b > 220) & (np.abs(r - g) < 20) & (np.abs(g - b) < 20)).astype(np.uint8) if active_colors.get('white') else np.zeros(bgr_img.shape[:2], dtype=np.uint8)
     
     raw_mask = orange_mask | green_mask | white_mask
-    kernel_stroke = np.ones((int(stroke_dil), int(stroke_dil)), np.uint8)
-    kernel_line = np.ones((int(line_dil), int(line_dil)), np.uint8)
-    
-    safe_green_white = cv2.dilate(green_mask | white_mask, kernel_stroke, iterations=1)
-    safe_orange = cv2.dilate(orange_mask, kernel_line, iterations=1)
+    safe_green_white = cv2.dilate(green_mask | white_mask, np.ones((int(stroke_dil), int(stroke_dil)), np.uint8), iterations=1)
+    safe_orange = cv2.dilate(orange_mask, np.ones((int(line_dil), int(line_dil)), np.uint8), iterations=1)
     return raw_mask, safe_green_white | safe_orange
 
 def get_clean_profile(img_gray: np.ndarray, safe_mask: np.ndarray, y1: int, y2: int, x1: int, x2: int, axis: int = 0) -> np.ndarray:
     roi_gray = img_gray[y1:y2, x1:x2].astype(float)
-    roi_mask = safe_mask[y1:y2, x1:x2]
-    roi_gray[roi_mask > 0] = np.nan
+    roi_gray[safe_mask[y1:y2, x1:x2] > 0] = np.nan
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         return np.nanmean(roi_gray, axis=axis)
@@ -101,117 +92,80 @@ def extract_mwir_features(bgr_img: np.ndarray, gray_img: np.ndarray, active_colo
 
 def _clip_box(box, img_w, img_h):
     x_min, x_max, y_min, y_max = box
-    x_min_c = max(0, min(x_min, img_w - 2))
-    x_max_c = max(x_min_c + 1, min(x_max, img_w))
-    y_min_c = max(0, min(y_min, img_h - 2))
-    y_max_c = max(y_min_c + 1, min(y_max, img_h))
-    return (x_min_c, x_max_c, y_min_c, y_max_c)
+    return max(0, min(x_min, img_w - 2)), max(x_min + 1, min(x_max, img_w)), max(0, min(y_min, img_h - 2)), max(y_min + 1, min(y_max, img_h))
 
-def plot_mask_diagnostic_original(bgr_img, safe_mask, mast_x, left_edge, right_edge, horizon_y, channel_name, subfolder_name, save_path, roi_box):
+
+# ----------------------------------------------------------------------------------
+# CONSOLIDATED PLOTTING FUNCTIONS
+# ----------------------------------------------------------------------------------
+
+def plot_mask_diagnostic(bgr_img, safe_mask, mast_x, left_edge, right_edge, horizon_y, channel_name, subfolder_name, save_path, roi_box, is_zoomed=False):
     img_h, img_w = bgr_img.shape[:2]
     x_min, x_max, y_min, y_max = _clip_box(roi_box, img_w, img_h)
-    fig, axes = plt.subplots(1, 3, figsize=(16, 6), dpi=150)
+    
+    dpi = 100 if is_zoomed else 150
+    figsize = (img_w / dpi, img_h / dpi) if is_zoomed else (16, 6)
+    
+    fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
     crop_rgb = cv2.cvtColor(bgr_img[y_min:y_max, x_min:x_max], cv2.COLOR_BGR2RGB)
     crop_mask = safe_mask[y_min:y_max, x_min:x_max]
-    masked_vis = crop_rgb.copy(); masked_vis[crop_mask > 0] = [255, 0, 0] 
-    axes[0].imshow(crop_rgb, extent=[x_min, x_max, y_max, y_min])
-    axes[0].axvline(left_edge, color='magenta', linestyle=':', lw=2)
-    axes[0].axvline(right_edge, color='magenta', linestyle=':', lw=2)
-    axes[0].axvline(mast_x, color='cyan', linestyle='--', lw=2)
-    axes[0].axhline(horizon_y, color='lime', linestyle='-.', lw=2)
-    axes[0].set_title(f"[{subfolder_name}] {channel_name} Original ROI with Edges")
-    axes[1].imshow(crop_mask, cmap='gray', extent=[x_min, x_max, y_max, y_min])
-    axes[1].set_title(f"[{subfolder_name}] {channel_name} Binary Mask")
-    axes[2].imshow(masked_vis, extent=[x_min, x_max, y_max, y_min])
-    axes[2].axvline(left_edge, color='magenta', linestyle=':', lw=2)
-    axes[2].axvline(right_edge, color='magenta', linestyle=':', lw=2)
-    axes[2].axvline(mast_x, color='cyan', linestyle='--', lw=2)
-    axes[2].axhline(horizon_y, color='lime', linestyle='-.', lw=2)
-    axes[2].set_title(f"[{subfolder_name}] {channel_name} Pixels Ignored (Red = NaN)")
-    for ax in axes: ax.set_xlabel("Pixel X"); ax.set_ylabel("Pixel Y"); ax.grid(True, linestyle=":", alpha=0.5)
+    masked_vis = crop_rgb.copy()
+    masked_vis[crop_mask > 0] = [255, 0, 0] 
+    
+    titles = [f"[{subfolder_name}] {channel_name} Original ROI", 
+              f"[{subfolder_name}] {channel_name} Binary Mask", 
+              f"[{subfolder_name}] {channel_name} Pixels Ignored (Red)"]
+              
+    axes[0].imshow(crop_rgb, extent=[x_min, x_max, y_max, y_min], interpolation='nearest' if is_zoomed else None)
+    axes[1].imshow(crop_mask, cmap='gray', extent=[x_min, x_max, y_max, y_min], interpolation='nearest' if is_zoomed else None)
+    axes[2].imshow(masked_vis, extent=[x_min, x_max, y_max, y_min], interpolation='nearest' if is_zoomed else None)
+    
+    for i, ax in enumerate(axes):
+        ax.set_title(titles[i], fontsize=14 if is_zoomed else 12)
+        ax.set_xlabel("Pixel X", fontsize=12 if is_zoomed else 10)
+        ax.set_ylabel("Pixel Y", fontsize=12 if is_zoomed else 10)
+        ax.grid(True, linestyle=":", alpha=0.5)
+        
+        if i in [0, 2]:
+            ax.axvline(left_edge, color='magenta', linestyle=':', lw=2)
+            ax.axvline(right_edge, color='magenta', linestyle=':', lw=2)
+            ax.axvline(mast_x, color='cyan', linestyle='--', lw=2)
+            ax.axhline(horizon_y, color='lime', linestyle='-.', lw=2)
+
     plt.tight_layout()
-    try: plt.savefig(save_path, bbox_inches="tight")
+    try: plt.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
     except PermissionError: pass
     plt.close()
 
-def plot_and_save_side_by_side_original(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_mast, mwir_horizon, subfolder_name, save_path, eon_box, mwir_box):
+def plot_and_save_side_by_side(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_mast, mwir_horizon, subfolder_name, save_path, eon_box, mwir_box, is_zoomed=False):
     img_h, img_w = rgb_eon.shape[:2]
     e_x_min, e_x_max, e_y_min, e_y_max = _clip_box(eon_box, img_w, img_h)
     m_x_min, m_x_max, m_y_min, m_y_max = _clip_box(mwir_box, img_w, img_h)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 8), dpi=150)
-    crop_eon = rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max]
-    ax1.imshow(crop_eon, extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation='nearest')
+    
+    dpi = 100 if is_zoomed else 150
+    figsize = (img_w / dpi, img_h / dpi) if is_zoomed else (14, 8)
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize, dpi=dpi)
+    
+    ax1.imshow(rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max], extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation='nearest')
     ax1.axvline(x=eon_mast, color="cyan", linestyle="--", linewidth=2)
     ax1.axhline(y=eon_horizon, color="lime", linestyle="-.", linewidth=2)
     ax1.plot(eon_mast, eon_horizon, "ro", markersize=8) 
-    ax1.set_xlim(e_x_min, e_x_max); ax1.set_ylim(e_y_max, e_y_min); ax1.set_title("EON Channel (Visible)", fontsize=12, fontweight="bold")
-    ax1.grid(True, linestyle=":", alpha=0.6)
-    crop_mwir = rgb_mwir[m_y_min:m_y_max, m_x_min:m_x_max]
-    ax2.imshow(crop_mwir, extent=[m_x_min, m_x_max, m_y_max, m_y_min], interpolation='nearest')
+    ax1.set_title("EON Channel (Visible)", fontsize=16 if is_zoomed else 12, fontweight="bold")
+    
+    ax2.imshow(rgb_mwir[m_y_min:m_y_max, m_x_min:m_x_max], extent=[m_x_min, m_x_max, m_y_max, m_y_min], interpolation='nearest')
     ax2.axvline(x=mwir_mast, color="yellow", linestyle="--", linewidth=2)
     ax2.axhline(y=mwir_horizon, color="lime", linestyle="-.", linewidth=2)
     ax2.plot(mwir_mast, mwir_horizon, "ro", markersize=8) 
-    ax2.set_xlim(m_x_min, m_x_max); ax2.set_ylim(m_y_max, m_y_min); ax2.set_title("MWIR Channel (Thermal)", fontsize=12, fontweight="bold")
-    ax2.grid(True, linestyle=":", alpha=0.6)
-    plt.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=13, fontweight="bold")
-    plt.tight_layout()
-    try: plt.savefig(save_path, bbox_inches="tight")
-    except PermissionError: pass
-    plt.close()
+    ax2.set_title("MWIR Channel (Thermal)", fontsize=16 if is_zoomed else 12, fontweight="bold")
 
-def plot_mask_diagnostic_zoomed(bgr_img, safe_mask, mast_x, left_edge, right_edge, horizon_y, channel_name, subfolder_name, save_path, roi_box):
-    img_h, img_w = bgr_img.shape[:2]
-    x_min, x_max, y_min, y_max = _clip_box(roi_box, img_w, img_h)
-    dpi = 100 
-    fig_w, fig_h = img_w / dpi, img_h / dpi
-    fig, axes = plt.subplots(1, 3, figsize=(fig_w, fig_h), dpi=dpi)
-    crop_rgb = cv2.cvtColor(bgr_img[y_min:y_max, x_min:x_max], cv2.COLOR_BGR2RGB)
-    crop_mask = safe_mask[y_min:y_max, x_min:x_max]
-    masked_vis = crop_rgb.copy(); masked_vis[crop_mask > 0] = [255, 0, 0] 
-    axes[0].imshow(crop_rgb, extent=[x_min, x_max, y_max, y_min], interpolation='nearest')
-    axes[0].axvline(left_edge, color='magenta', linestyle=':', lw=2)
-    axes[0].axvline(right_edge, color='magenta', linestyle=':', lw=2)
-    axes[0].axvline(mast_x, color='cyan', linestyle='--', lw=2)
-    axes[0].axhline(horizon_y, color='lime', linestyle='-.', lw=2)
-    axes[0].set_title(f"[{subfolder_name}] {channel_name} Original ROI", fontsize=14)
-    axes[1].imshow(crop_mask, cmap='gray', extent=[x_min, x_max, y_max, y_min], interpolation='nearest')
-    axes[1].set_title(f"[{subfolder_name}] {channel_name} Binary Mask", fontsize=14)
-    axes[2].imshow(masked_vis, extent=[x_min, x_max, y_max, y_min], interpolation='nearest')
-    axes[2].axvline(left_edge, color='magenta', linestyle=':', lw=2)
-    axes[2].axvline(right_edge, color='magenta', linestyle=':', lw=2)
-    axes[2].axvline(mast_x, color='cyan', linestyle='--', lw=2)
-    axes[2].axhline(horizon_y, color='lime', linestyle='-.', lw=2)
-    axes[2].set_title(f"[{subfolder_name}] {channel_name} Pixels Ignored (Red)", fontsize=14)
-    for ax in axes: ax.set_xlabel("Pixel X", fontsize=12); ax.set_ylabel("Pixel Y", fontsize=12); ax.tick_params(axis='both', which='major', labelsize=10); ax.grid(True, linestyle=":", alpha=0.5)
-    plt.tight_layout()
-    try: plt.savefig(save_path, dpi=dpi)
-    except PermissionError: pass
-    plt.close()
+    for ax, limits in zip([ax1, ax2], [(e_x_min, e_x_max, e_y_max, e_y_min), (m_x_min, m_x_max, m_y_max, m_y_min)]):
+        ax.set_xlim(limits[0], limits[1]); ax.set_ylim(limits[2], limits[3])
+        ax.grid(True, linestyle=":", alpha=0.6)
 
-def plot_and_save_side_by_side_zoomed(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_mast, mwir_horizon, subfolder_name, save_path, eon_box, mwir_box):
-    img_h, img_w = rgb_eon.shape[:2]
-    e_x_min, e_x_max, e_y_min, e_y_max = _clip_box(eon_box, img_w, img_h)
-    m_x_min, m_x_max, m_y_min, m_y_max = _clip_box(mwir_box, img_w, img_h)
-    dpi = 100 
-    fig_w, fig_h = img_w / dpi, img_h / dpi
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(fig_w, fig_h), dpi=dpi)
-    crop_eon = rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max]
-    ax1.imshow(crop_eon, extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation='nearest')
-    ax1.axvline(x=eon_mast, color="cyan", linestyle="--", linewidth=2)
-    ax1.axhline(y=eon_horizon, color="lime", linestyle="-.", linewidth=2)
-    ax1.plot(eon_mast, eon_horizon, "ro", markersize=8) 
-    ax1.set_xlim(e_x_min, e_x_max); ax1.set_ylim(e_y_max, e_y_min); ax1.set_title("EON Channel (Visible)", fontsize=16, fontweight="bold")
-    ax1.grid(True, linestyle=":", alpha=0.6)
-    crop_mwir = rgb_mwir[m_y_min:m_y_max, m_x_min:m_x_max]
-    ax2.imshow(crop_mwir, extent=[m_x_min, m_x_max, m_y_max, m_y_min], interpolation='nearest')
-    ax2.axvline(x=mwir_mast, color="yellow", linestyle="--", linewidth=2)
-    ax2.axhline(y=mwir_horizon, color="lime", linestyle="-.", linewidth=2)
-    ax2.plot(mwir_mast, mwir_horizon, "ro", markersize=8) 
-    ax2.set_xlim(m_x_min, m_x_max); ax2.set_ylim(m_y_max, m_y_min); ax2.set_title("MWIR Channel (Thermal)", fontsize=16, fontweight="bold")
-    ax2.grid(True, linestyle=":", alpha=0.6)
-    plt.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=20, fontweight="bold")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    try: plt.savefig(save_path, dpi=dpi)
+    plt.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=20 if is_zoomed else 13, fontweight="bold")
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95] if is_zoomed else None)
+    try: plt.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
     except PermissionError: pass
     plt.close()
 
@@ -226,8 +180,7 @@ def process_pair(eon_path: str, mwir_path: str, subfolder_name: str, output_dir:
         }
 
     os.makedirs(output_dir, exist_ok=True)
-    img_eon = cv2.imread(eon_path)
-    img_mwir = cv2.imread(mwir_path)
+    img_eon, img_mwir = cv2.imread(eon_path), cv2.imread(mwir_path)
 
     if img_eon is None or img_mwir is None:
         return {"Subfolder ID": subfolder_name, "Status": "ERROR: Image Read Failed"}, False
@@ -258,12 +211,14 @@ def process_pair(eon_path: str, mwir_path: str, subfolder_name: str, output_dir:
     eon_box_orig = (max(0, int(mast_x_eon - orig_w / 2)), min(img_w, int(mast_x_eon + orig_w / 2)), max(0, int(horizon_eon - orig_h / 2)), min(img_h, int(horizon_eon + orig_h / 2)))
     mwir_box_orig = (max(0, int(mast_x_mwir - orig_w / 2)), min(img_w, int(mast_x_mwir + orig_w / 2)), max(0, int(horizon_mwir - orig_h / 2)), min(img_h, int(horizon_mwir + orig_h / 2)))
 
-    plot_mask_diagnostic_original(img_eon, mask_eon, mast_x_eon, left_eon, right_eon, horizon_eon, "EON", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_eon_mask_diagnostic_original.png"), eon_box_orig)
-    plot_mask_diagnostic_original(img_mwir, mask_mwir, mast_x_mwir, left_mwir, right_mwir, horizon_mwir, "MWIR", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_mwir_mask_diagnostic_original.png"), mwir_box_orig)
-    plot_and_save_side_by_side_original(rgb_eon, rgb_mwir, mast_x_eon, horizon_eon, mast_x_mwir, horizon_mwir, subfolder_name, os.path.join(output_dir, f"{subfolder_name}_side_by_side_original.png"), eon_box_orig, mwir_box_orig)
-    plot_mask_diagnostic_zoomed(img_eon, mask_eon, mast_x_eon, left_eon, right_eon, horizon_eon, "EON", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_eon_mask_diagnostic_zoomed.png"), eon_box_zoomed)
-    plot_mask_diagnostic_zoomed(img_mwir, mask_mwir, mast_x_mwir, left_mwir, right_mwir, horizon_mwir, "MWIR", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_mwir_mask_diagnostic_zoomed.png"), mwir_box_zoomed)
-    plot_and_save_side_by_side_zoomed(rgb_eon, rgb_mwir, mast_x_eon, horizon_eon, mast_x_mwir, horizon_mwir, subfolder_name, os.path.join(output_dir, f"{subfolder_name}_side_by_side_zoomed.png"), eon_box_zoomed, mwir_box_zoomed)
+    # Use the consolidated plotting functions
+    plot_mask_diagnostic(img_eon, mask_eon, mast_x_eon, left_eon, right_eon, horizon_eon, "EON", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_eon_mask_diagnostic_original.png"), eon_box_orig, is_zoomed=False)
+    plot_mask_diagnostic(img_mwir, mask_mwir, mast_x_mwir, left_mwir, right_mwir, horizon_mwir, "MWIR", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_mwir_mask_diagnostic_original.png"), mwir_box_orig, is_zoomed=False)
+    plot_and_save_side_by_side(rgb_eon, rgb_mwir, mast_x_eon, horizon_eon, mast_x_mwir, horizon_mwir, subfolder_name, os.path.join(output_dir, f"{subfolder_name}_side_by_side_original.png"), eon_box_orig, mwir_box_orig, is_zoomed=False)
+    
+    plot_mask_diagnostic(img_eon, mask_eon, mast_x_eon, left_eon, right_eon, horizon_eon, "EON", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_eon_mask_diagnostic_zoomed.png"), eon_box_zoomed, is_zoomed=True)
+    plot_mask_diagnostic(img_mwir, mask_mwir, mast_x_mwir, left_mwir, right_mwir, horizon_mwir, "MWIR", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_mwir_mask_diagnostic_zoomed.png"), mwir_box_zoomed, is_zoomed=True)
+    plot_and_save_side_by_side(rgb_eon, rgb_mwir, mast_x_eon, horizon_eon, mast_x_mwir, horizon_mwir, subfolder_name, os.path.join(output_dir, f"{subfolder_name}_side_by_side_zoomed.png"), eon_box_zoomed, mwir_box_zoomed, is_zoomed=True)
 
     return {
         "Subfolder ID": subfolder_name, "EON Mast Center X": mast_x_eon, "EON Horizon Y": horizon_eon,
