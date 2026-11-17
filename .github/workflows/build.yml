@@ -33,7 +33,7 @@ jobs:
       env:
         PYTHONPATH: Boresight
       run: |
-        pytest Boresight/tests/ -v
+        python -m pytest tests/ -v
 
     - name: Build Windows Executable
       run: |
