@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                                QLabel, QLineEdit, QFormLayout, QGroupBox, QTabWidget, QWidget)
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -61,6 +61,7 @@ class SettingsDialog(QDialog):
         profile_layout.addWidget(self.user_group)
         
         self.btn_reset_profiles = QPushButton("Restore Factory Profile Defaults")
+        self.btn_reset_profiles.setAutoDefault(False)
         self.btn_reset_profiles.clicked.connect(self.reset_profile_defaults)
         profile_layout.addWidget(self.btn_reset_profiles)
         
@@ -91,6 +92,7 @@ class SettingsDialog(QDialog):
         roi_layout.addWidget(roi_group)
         
         self.btn_reset_roi = QPushButton("Restore Factory ROI Defaults")
+        self.btn_reset_roi.setAutoDefault(False)
         self.btn_reset_roi.clicked.connect(self.reset_roi_defaults)
         roi_layout.addWidget(self.btn_reset_roi)
         self.tabs.addTab(self.tab_roi, "ROI & Masking")
@@ -99,13 +101,23 @@ class SettingsDialog(QDialog):
         
         btn_layout = QHBoxLayout()
         self.btn_save = QPushButton("Save Settings")
+        self.btn_save.setAutoDefault(False)
         self.btn_save.clicked.connect(self.save_settings)
+        
         self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel.setAutoDefault(False)
         self.btn_cancel.clicked.connect(self.reject)
+        
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_save)
         btn_layout.addWidget(self.btn_cancel)
         main_layout.addLayout(btn_layout)
+
+    def keyPressEvent(self, event):
+        """Intercept Enter key so it doesn't accidentally trigger dialog accept or random buttons"""
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            return 
+        super().keyPressEvent(event)
 
     def reset_profile_defaults(self):
         self.nz_range.setText("3880.75")

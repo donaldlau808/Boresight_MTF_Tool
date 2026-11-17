@@ -38,6 +38,9 @@ class MainWindow(QMainWindow):
         shutil.rmtree(self.drop_cache_dir, ignore_errors=True)
         self.process_thread = None
         self.report_thread = None
+        
+        # New variable to hold the extracted points in memory instead of writing them to disk
+        self.df_intersections = None
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -236,9 +239,12 @@ class MainWindow(QMainWindow):
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(300)
+        self.progress_bar.setAlignment(Qt.AlignCenter)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Ready")
         self.status_bar.addPermanentWidget(self.progress_bar)
 
         self.load_profile()
@@ -467,6 +473,8 @@ class MainWindow(QMainWindow):
 
     def populate_folder_list(self, input_dir):
         self.folder_list.clear(); self.system_image_paths.clear(); self.system_manual_coords.clear(); self.fresh_systems.clear(); self._clear_all_viewports()
+        self.df_intersections = None # Clear data state
+        
         eon_dir = self._find_channel_dir(input_dir, "EON")
         mwir_dir = self._find_channel_dir(input_dir, "MWIR")
         if not eon_dir or not mwir_dir:
@@ -644,6 +652,7 @@ class MainWindow(QMainWindow):
             self.logger.warning("Cancel requested... stopping after current folder.")
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Cancelled")
 
     def _process_folders(self, folder_list, manual_override=False):
         input_dir = self.dir_input_base.text()
@@ -656,6 +665,8 @@ class MainWindow(QMainWindow):
         self._is_manual_run = manual_override
 
         colors = {'orange': self.chk_orange.isChecked(), 'green': self.chk_green.isChecked(), 'white': self.chk_white.isChecked()}
+        
+        self.progress_bar.setFormat("%p%")
         self.progress_bar.setMaximum(len(folder_list))
         self.progress_bar.setValue(0)
         
@@ -686,23 +697,24 @@ class MainWindow(QMainWindow):
                 df_final["Subfolder ID"] = df_final["Subfolder ID"].astype(str).str.zfill(3)
                 df_final = df_final.sort_values("Subfolder ID")
                 
-                excel_path = os.path.join(res_dir, "All_Boresight_Intersections.xlsx")
-                df_final.to_excel(excel_path, index=False, sheet_name="Intersections")
-                self.logger.info("Processing complete. Saved raw intersections.")
+                # We hold the table strictly in memory now
+                self.df_intersections = df_final
+                
+                self.logger.info("Processing complete. Extracted intersections kept in memory.")
                 self.load_dataframe_to_table(df_final)
                 self.load_selected_folder()
                 self.btn_gen_report.setEnabled(True)
                 if len(folder_list) == 1: self.tabs.setCurrentIndex(1) 
-            except PermissionError:
-                self.logger.error("Permission Denied: Excel file is open. Close it and try again.")
             except Exception as e:
-                self.logger.error(f"Failed to save Excel data: {e}")
+                self.logger.error(f"Failed to process internal data: {e}")
 
         self.btn_cancel.setEnabled(False)
         self.btn_run_batch.setEnabled(self.chk_advanced.isChecked())
         self.btn_run_manual.setEnabled(True)
+        
         self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(0)
+        self.progress_bar.setValue(100)
+        self.progress_bar.setFormat("Done")
 
     def generate_excel_report(self):
         output_dir = self.dir_output_base.text()
@@ -710,23 +722,20 @@ class MainWindow(QMainWindow):
         sys_constants = self.get_system_constants()
         if not sys_constants: return
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
-        excel_input = os.path.join(res_dir, "All_Boresight_Intersections.xlsx")
         excel_output = os.path.join(res_dir, "CoBoresight_Misalignment_Report.xlsx")
-        plot_dir = os.path.join(res_dir, "CoBoresight_Plots")
 
         active_systems = [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
         if not active_systems:
             QMessageBox.warning(self, "No Systems Loaded", "The system queue is empty. There is no relevant data to generate a report.")
             return
 
-        if not os.path.isfile(excel_input):
+        # Replace file check with memory check
+        if self.df_intersections is None or self.df_intersections.empty:
             QMessageBox.warning(self, "No Processed Data", "No intersection data found yet.\nPlease run Batch Processing or Manual Queue Processing first.")
             return
 
         try:
-            df_check = pd.read_excel(excel_input)
-            df_check["Subfolder ID"] = df_check["Subfolder ID"].astype(str).str.zfill(3)
-            df_filtered = df_check[df_check["Subfolder ID"].isin(active_systems)]
+            df_filtered = self.df_intersections[self.df_intersections["Subfolder ID"].isin(active_systems)]
             if df_filtered.empty:
                 QMessageBox.warning(self, "No Relevant Data", "None of the systems currently in the queue have processed intersection data available.\nPlease process these systems first.")
                 return
@@ -736,6 +745,8 @@ class MainWindow(QMainWindow):
         if not self._check_excel_unlocked(res_dir): return
         
         self.logger.info("Generating formatted Excel Report in background... please wait.")
+        
+        self.progress_bar.setFormat("Generating...")
         self.progress_bar.setMaximum(0)
         self.progress_bar.setValue(0)
         
@@ -743,22 +754,26 @@ class MainWindow(QMainWindow):
         self.btn_run_batch.setEnabled(False)
         self.btn_run_manual.setEnabled(False)
         
-        self.report_thread = ReportGeneratorThread(excel_input, excel_output, plot_dir, sys_constants, active_systems)
+        self.report_thread = ReportGeneratorThread(self.df_intersections, excel_output, sys_constants, active_systems)
         self.report_thread.finished_report.connect(self.on_report_finished)
         self.report_thread.start()
 
     def on_report_finished(self, success, msg, df_display):
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(0)
         self.btn_gen_report.setEnabled(True)
         self.btn_run_batch.setEnabled(self.chk_advanced.isChecked())
         self.btn_run_manual.setEnabled(True)
         
         if success:
+            self.progress_bar.setMaximum(100)
+            self.progress_bar.setValue(100)
+            self.progress_bar.setFormat("Done")
             self.logger.info(msg)
             self.load_dataframe_to_table(df_display)
             self.tabs.setCurrentIndex(2)
         else:
+            self.progress_bar.setMaximum(100)
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat("Error")
             self.logger.error(f"Report Generation Failed: {msg}")
             QMessageBox.warning(self, "Report Generation Failed", str(msg))
 

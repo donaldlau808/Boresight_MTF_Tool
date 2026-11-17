@@ -6,7 +6,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-# [Keep create_crosshair_masks, get_clean_profile, extract_mast_center_edges, extract_horizon_elevation, extract_eon_features, extract_mwir_features, _clip_box exactly as they were - logic is unchanged]
 def create_crosshair_masks(bgr_img: np.ndarray, active_colors: dict, stroke_dil: int, line_dil: int) -> tuple[np.ndarray, np.ndarray]:
     b = bgr_img[:, :, 0].astype(int); g = bgr_img[:, :, 1].astype(int); r = bgr_img[:, :, 2].astype(int)
     orange_mask = ((r > 140) & (b < 100) & ((r - b) > 50)).astype(np.uint8) if active_colors.get('orange') else np.zeros(bgr_img.shape[:2], dtype=np.uint8)
@@ -170,7 +169,7 @@ def plot_and_save_side_by_side(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_ma
     plt.close()
 
 def process_pair(eon_path: str, mwir_path: str, subfolder_name: str, output_dir: str, 
-                 eon_colors: dict, mwir_colors: dict, manual_coords: dict = None, roi_config: dict = None) -> tuple:
+                 eon_colors: dict, mwir_colors: dict, manual_coords: dict = None, roi_config: dict = None, save_masks: bool = True) -> tuple:
     if roi_config is None:
         roi_config = {
             'roi_x_min': 940, 'roi_x_max': 980, 'roi_y_min': 420, 'roi_y_max': 560,
@@ -190,7 +189,6 @@ def process_pair(eon_path: str, mwir_path: str, subfolder_name: str, output_dir:
     img_h, img_w = img_eon.shape[:2]
     
     view_w, view_h = 600, 400
-    orig_w, orig_h = roi_config['roi_x_max'] - roi_config['roi_x_min'], roi_config['roi_y_max'] - roi_config['roi_y_min']
 
     if manual_coords:
         _, mask_eon = create_crosshair_masks(img_eon, eon_colors, roi_config['stroke_dilation'], roi_config['line_dilation'])
@@ -208,17 +206,13 @@ def process_pair(eon_path: str, mwir_path: str, subfolder_name: str, output_dir:
         
     eon_box_zoomed = (max(0, int(mast_x_eon - view_w / 2)), min(img_w, int(mast_x_eon + view_w / 2)), max(0, int(horizon_eon - view_h / 2)), min(img_h, int(horizon_eon + view_h / 2)))
     mwir_box_zoomed = (max(0, int(mast_x_mwir - view_w / 2)), min(img_w, int(mast_x_mwir + view_w / 2)), max(0, int(horizon_mwir - view_h / 2)), min(img_h, int(horizon_mwir + view_h / 2)))
-    eon_box_orig = (max(0, int(mast_x_eon - orig_w / 2)), min(img_w, int(mast_x_eon + orig_w / 2)), max(0, int(horizon_eon - orig_h / 2)), min(img_h, int(horizon_eon + orig_h / 2)))
-    mwir_box_orig = (max(0, int(mast_x_mwir - orig_w / 2)), min(img_w, int(mast_x_mwir + orig_w / 2)), max(0, int(horizon_mwir - orig_h / 2)), min(img_h, int(horizon_mwir + orig_h / 2)))
 
-    # Use the consolidated plotting functions
-    plot_mask_diagnostic(img_eon, mask_eon, mast_x_eon, left_eon, right_eon, horizon_eon, "EON", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_eon_mask_diagnostic_original.png"), eon_box_orig, is_zoomed=False)
-    plot_mask_diagnostic(img_mwir, mask_mwir, mast_x_mwir, left_mwir, right_mwir, horizon_mwir, "MWIR", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_mwir_mask_diagnostic_original.png"), mwir_box_orig, is_zoomed=False)
-    plot_and_save_side_by_side(rgb_eon, rgb_mwir, mast_x_eon, horizon_eon, mast_x_mwir, horizon_mwir, subfolder_name, os.path.join(output_dir, f"{subfolder_name}_side_by_side_original.png"), eon_box_orig, mwir_box_orig, is_zoomed=False)
-    
-    plot_mask_diagnostic(img_eon, mask_eon, mast_x_eon, left_eon, right_eon, horizon_eon, "EON", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_eon_mask_diagnostic_zoomed.png"), eon_box_zoomed, is_zoomed=True)
-    plot_mask_diagnostic(img_mwir, mask_mwir, mast_x_mwir, left_mwir, right_mwir, horizon_mwir, "MWIR", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_mwir_mask_diagnostic_zoomed.png"), mwir_box_zoomed, is_zoomed=True)
+    # Save zoomed outputs. Mask images are optionally skipped during manual coordinate processing.
     plot_and_save_side_by_side(rgb_eon, rgb_mwir, mast_x_eon, horizon_eon, mast_x_mwir, horizon_mwir, subfolder_name, os.path.join(output_dir, f"{subfolder_name}_side_by_side_zoomed.png"), eon_box_zoomed, mwir_box_zoomed, is_zoomed=True)
+    
+    if save_masks:
+        plot_mask_diagnostic(img_eon, mask_eon, mast_x_eon, left_eon, right_eon, horizon_eon, "EON", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_eon_mask_diagnostic_zoomed.png"), eon_box_zoomed, is_zoomed=True)
+        plot_mask_diagnostic(img_mwir, mask_mwir, mast_x_mwir, left_mwir, right_mwir, horizon_mwir, "MWIR", subfolder_name, os.path.join(output_dir, f"{subfolder_name}_mwir_mask_diagnostic_zoomed.png"), mwir_box_zoomed, is_zoomed=True)
 
     return {
         "Subfolder ID": subfolder_name, "EON Mast Center X": mast_x_eon, "EON Horizon Y": horizon_eon,

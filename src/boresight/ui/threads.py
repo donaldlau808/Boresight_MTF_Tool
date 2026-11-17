@@ -54,7 +54,8 @@ class BatchProcessThread(QThread):
             
             result_dict, success = pixel_scraper.process_pair(
                 eon_path, mwir_path, subfolder, str(output_results_dir),
-                self.colors, self.colors, manual_coords=coords, roi_config=self.roi_config
+                self.colors, self.colors, manual_coords=coords, roi_config=self.roi_config,
+                save_masks=not self.manual_override # Skip saving masks if manual run
             )
             
             if result_dict:
@@ -65,17 +66,16 @@ class BatchProcessThread(QThread):
 class ReportGeneratorThread(QThread):
     finished_report = Signal(bool, str, object)
     
-    def __init__(self, excel_input, excel_output, plot_dir, sys_constants, active_systems=None):
+    def __init__(self, df_input, excel_output, sys_constants, active_systems=None):
         super().__init__()
-        self.excel_input = excel_input
+        self.df_input = df_input
         self.excel_output = excel_output
-        self.plot_dir = plot_dir
         self.sys_constants = sys_constants
         self.active_systems = active_systems
 
     def run(self):
         try:
-            result = boresight_eval.generate_report(self.excel_input, self.excel_output, self.plot_dir, self.sys_constants, self.active_systems)
+            result = boresight_eval.generate_report(self.df_input, self.excel_output, self.sys_constants, self.active_systems)
             self.finished_report.emit(result[0], result[1], result[2])
         except Exception as e:
             self.finished_report.emit(False, str(e), None)
