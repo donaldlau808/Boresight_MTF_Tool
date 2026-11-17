@@ -2,14 +2,14 @@ import os
 import glob
 from PySide6.QtCore import QThread, Signal
 from core import pixel_scraper
-
+from core import boresight_eval
 
 class BatchProcessThread(QThread):
     progress_update = Signal(int, str)
     finished_data = Signal(list, list)
 
     def __init__(self, folder_list, input_dir, output_dir, colors,
-                 manual_coords_dict=None, manual_override=False, system_paths_dict=None):
+                 manual_coords_dict=None, manual_override=False, system_paths_dict=None, roi_config=None):
         super().__init__()
         self.folder_list = folder_list
         self.input_dir = input_dir
@@ -18,6 +18,7 @@ class BatchProcessThread(QThread):
         self.manual_coords_dict = manual_coords_dict or {}
         self.manual_override = manual_override
         self.system_paths_dict = system_paths_dict
+        self.roi_config = roi_config
 
     def _resolve_pair_paths(self, subfolder):
         if self.system_paths_dict is not None:
@@ -41,19 +42,35 @@ class BatchProcessThread(QThread):
                 break
 
             eon_path, mwir_path = self._resolve_pair_paths(subfolder)
-
             if not eon_path or not os.path.exists(eon_path) or not mwir_path or not os.path.exists(mwir_path):
                 self.progress_update.emit(i + 1, f"Skipped System [{subfolder}]: Missing EON or MWIR image.")
                 continue
 
             self.progress_update.emit(i + 1, f"Processing System [{subfolder}]...")
-
             coords = self.manual_coords_dict.get(subfolder) if self.manual_override else None
             result_dict, success = pixel_scraper.process_pair(
                 eon_path, mwir_path, subfolder, output_results_dir,
-                self.colors, self.colors, manual_coords=coords
+                self.colors, self.colors, manual_coords=coords, roi_config=self.roi_config
             )
             if result_dict:
                 intersection_data.append(result_dict)
 
         self.finished_data.emit(intersection_data, self.folder_list)
+
+class ReportGeneratorThread(QThread):
+    finished_report = Signal(bool, str, object)
+    
+    def __init__(self, excel_input, excel_output, plot_dir, sys_constants, active_systems=None):
+        super().__init__()
+        self.excel_input = excel_input
+        self.excel_output = excel_output
+        self.plot_dir = plot_dir
+        self.sys_constants = sys_constants
+        self.active_systems = active_systems
+
+    def run(self):
+        try:
+            result = boresight_eval.generate_report(self.excel_input, self.excel_output, self.plot_dir, self.sys_constants, self.active_systems)
+            self.finished_report.emit(result[0], result[1], result[2])
+        except Exception as e:
+            self.finished_report.emit(False, str(e), None)

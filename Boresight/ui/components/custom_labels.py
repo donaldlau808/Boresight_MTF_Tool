@@ -4,7 +4,6 @@ from PySide6.QtGui import QPixmap, QImage, QPen, QColor, QPainter
 from PySide6.QtCore import Qt, Signal, QRectF
 
 class ResizableImageLabel(QGraphicsView):
-    """Upgraded image viewer supporting Ctrl+Scroll zoom and drag panning."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scene = QGraphicsScene(self)
@@ -14,7 +13,7 @@ class ResizableImageLabel(QGraphicsView):
         
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
-        self.setStyleSheet("background-color: #1e1e1e; border: 1px solid #555;")
+        self.setStyleSheet("background-color: #F0F0F0; border: 1px solid #C0C0C0;")
         self.zoom_factor = 1.0
         self.current_pixmap = None
         self.placeholder_text = ""
@@ -33,7 +32,6 @@ class ResizableImageLabel(QGraphicsView):
             self.clear_image()
 
     def clear_image(self):
-        """Safely clears the image and aggressively forces the viewport to redraw as blank."""
         self.current_pixmap = None
         self.pixmap_item.setPixmap(QPixmap()) 
         self.scene.setSceneRect(QRectF(0, 0, 1, 1))
@@ -43,7 +41,7 @@ class ResizableImageLabel(QGraphicsView):
         super().paintEvent(event)
         if self.current_pixmap is None and self.placeholder_text:
             painter = QPainter(self.viewport())
-            painter.setPen(QColor("#a1a1aa"))
+            painter.setPen(QColor("#888888"))
             font = painter.font()
             font.setPointSize(11)
             font.setBold(True)
@@ -74,9 +72,8 @@ class ResizableImageLabel(QGraphicsView):
 
 
 class ClickableLabel(ResizableImageLabel):
-    """Upgraded interactive viewer with markup, coordinate extraction, and drag-and-drop."""
     coordinate_clicked = Signal(str, int, int)
-    image_dropped = Signal(str, str) # Emits: channel_name, file_path
+    image_dropped = Signal(str, str)
 
     def __init__(self, channel_name, parent=None):
         super().__init__(parent)
@@ -84,8 +81,6 @@ class ClickableLabel(ResizableImageLabel):
         self.placeholder_text = f"Drag and drop {channel_name} image"
         self.clicked_pt = None
         self.crosshair_lines = []
-        
-        # Enable Drag and Drop
         self.setAcceptDrops(True)
 
     def set_image(self, image_path):
@@ -98,18 +93,13 @@ class ClickableLabel(ResizableImageLabel):
             self.scene.removeItem(line)
         self.crosshair_lines.clear()
 
-    # --- DRAG AND DROP EVENTS ---
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            super().dragEnterEvent(event)
+        if event.mimeData().hasUrls(): event.acceptProposedAction()
+        else: super().dragEnterEvent(event)
             
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            super().dragMoveEvent(event)
+        if event.mimeData().hasUrls(): event.acceptProposedAction()
+        else: super().dragMoveEvent(event)
             
     def dropEvent(self, event):
         urls = event.mimeData().urls()
@@ -117,13 +107,11 @@ class ClickableLabel(ResizableImageLabel):
             for url in urls:
                 if url.isLocalFile():
                     file_path = os.path.normpath(url.toLocalFile())
-                    # Verify it is an image file
                     if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')):
                         event.acceptProposedAction()
                         self.image_dropped.emit(self.channel_name, file_path)
-                        break # Only process the first image if they drag multiple
+                        break 
 
-    # --- MOUSE EVENTS ---
     def mousePressEvent(self, event):
         if self.dragMode() == QGraphicsView.ScrollHandDrag and event.button() == Qt.LeftButton and QApplication.keyboardModifiers() != Qt.ControlModifier:
             scene_pos = self.mapToScene(event.pos())
