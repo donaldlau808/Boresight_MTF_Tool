@@ -132,8 +132,10 @@ def plot_mask_diagnostic(bgr_img, safe_mask, mast_x, left_edge, right_edge, hori
             ax.axhline(horizon_y, color='lime', linestyle='-.', lw=2)
 
     plt.tight_layout()
-    try: plt.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
-    except PermissionError: pass
+    try: 
+        plt.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
+    except PermissionError: 
+        print(f"WARNING: Could not save plot {save_path} (File in use or permission denied)")
     plt.close()
 
 def plot_and_save_side_by_side(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_mast, mwir_horizon, subfolder_name, save_path, eon_box, mwir_box, is_zoomed=False):
@@ -164,8 +166,10 @@ def plot_and_save_side_by_side(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_ma
 
     plt.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=20 if is_zoomed else 13, fontweight="bold")
     plt.tight_layout(rect=[0, 0.03, 1, 0.95] if is_zoomed else None)
-    try: plt.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
-    except PermissionError: pass
+    try: 
+        plt.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
+    except PermissionError: 
+        print(f"WARNING: Could not save plot {save_path} (File in use or permission denied)")
     plt.close()
 
 def process_pair(eon_path: str, mwir_path: str, subfolder_name: str, output_dir: str, 

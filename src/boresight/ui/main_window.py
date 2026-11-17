@@ -359,7 +359,10 @@ class MainWindow(QMainWindow):
             dest_path = os.path.join(dest_dir, os.path.basename(file_path))
             shutil.copy2(file_path, dest_path)
             self.logger.info(f"Loaded {os.path.basename(file_path)} into System {system_num} ({channel})")
-        except Exception: return
+        except Exception as e:
+            self.logger.error(f"Failed to load dropped image: {e}")
+            QMessageBox.warning(self, "Load Error", f"Could not copy the dropped image:\n{e}")
+            return
 
         if system_num not in self.system_image_paths:
             self.system_image_paths[system_num] = {'EON': None, 'MWIR': None}
@@ -443,6 +446,7 @@ class MainWindow(QMainWindow):
             }
         except ValueError:
             self.logger.error("Invalid Constants: Please ensure all System Constants are valid numbers.")
+            QMessageBox.warning(self, "Invalid Input", "System Constants must be valid numbers (no letters or symbols).")
             return None
 
     def browse_input_directory(self):

@@ -44,7 +44,7 @@ def create_misalignment_plot(val_x, val_y, max_scale, unit, plot_type, title_tex
     try:
         plt.savefig(save_path, transparent=True, bbox_inches='tight')
     except PermissionError:
-        pass
+        print(f"WARNING: Could not save plot {save_path} (File in use or permission denied)")
     plt.close(fig)
 
 def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constants: dict, active_systems: list = None):
