@@ -4,25 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boresight-mtf-tool"
-version = "1.0.2"
-description = "Boresight MTF Evaluation Tool"
-readme = "README.md"
+version = "1.0.3"
+description = "Boresight Misalignment and MTF Analysis Tool"
 requires-python = ">=3.10"
 dependencies = [
-    "PySide6>=6.5.0",
-    "opencv-python>=4.8.0",
-    "pandas>=2.0.0",
-    "matplotlib>=3.7.0",
-    "xlsxwriter>=3.1.0",
-    "numpy>=1.24.0"
+    "PySide6",
+    "pandas",
+    "openpyxl",
+    "opencv-python",
+    "matplotlib",
+    "numpy",
+    "scipy",
+    "pillow",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pyinstaller>=6.0.0"
+    "pytest",
+    "pyinstaller",
+    "ruff",
 ]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
 pythonpath = ["src"]
+testpaths = ["tests"]
