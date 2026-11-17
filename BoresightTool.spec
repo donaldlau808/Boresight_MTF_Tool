@@ -3,8 +3,8 @@
 block_cipher = None
 
 a = Analysis(
-    ['Boresight/main.py'],
-    pathex=['Boresight'],
+    ['src/boresight/__main__.py'],
+    pathex=['src'],
     binaries=[],
     datas=[],
     hiddenimports=[
