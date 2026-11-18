@@ -50,9 +50,19 @@ def create_misalignment_plot(val_x, val_y, max_scale, unit, plot_type, title_tex
 def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constants: dict, active_systems: list = None):
     RANGE_M = float(sys_constants.get('target_range', 3880.75))
     CANVAS_W_PX = float(sys_constants.get('canvas_width', 3840.0))
+    
+    EON_FOCAL_LEN_MM = float(sys_constants.get('eon_focal_length', 504.0))
+    EON_NATIVE_PITCH_MM = float(sys_constants.get('eon_pixel_pitch', 0.00274))
+    EON_NATIVE_W_PX = float(sys_constants.get('eon_native_width', 5328.0))
+    
     MWIR_FOCAL_LEN_MM = float(sys_constants.get('focal_length', 420.0))
     MWIR_NATIVE_PITCH_MM = float(sys_constants.get('pixel_pitch', 0.010))
     MWIR_NATIVE_W_PX = float(sys_constants.get('native_width', 1280.0))
+    
+    EON_IMG_W = float(sys_constants.get('eon_img_w', 3840.0))
+    EON_IMG_H = float(sys_constants.get('eon_img_h', 2160.0))
+    MWIR_IMG_W = float(sys_constants.get('mwir_img_w', 1280.0))
+    MWIR_IMG_H = float(sys_constants.get('mwir_img_h', 720.0))
 
     if RANGE_M <= 0 or MWIR_FOCAL_LEN_MM <= 0:
         return False, "Target Range and Focal Length must be greater than zero.", None
@@ -75,14 +85,13 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
     for col in ['EON Mast Center X', 'EON Horizon Y', 'MWIR Mast Center X', 'MWIR Horizon Y']:
         df[col] = pd.to_numeric(df[col].replace(r'^\s*$', np.nan, regex=True), errors='coerce')
 
-    # Wrap the entire plotting and report generation in a temporary directory context
     with tempfile.TemporaryDirectory() as temp_plot_dir:
         plot_records = []
-        DATA_START_ROW = 17 # 0-indexed row 16 for xlsxwriter
         num_px_x, num_px_y, num_miss_x, num_miss_y, num_tot_miss, num_mrad_x, num_mrad_y, num_tot_mrad = [], [], [], [], [], [], [], []
         
         eff_pitch_mm = MWIR_NATIVE_PITCH_MM * (MWIR_NATIVE_W_PX / CANVAS_W_PX)
         canvas_gsd_m_px = (eff_pitch_mm / MWIR_FOCAL_LEN_MM) * RANGE_M
+        CANVAS_H_PX = CANVAS_W_PX * (EON_IMG_H / EON_IMG_W)
 
         for i, row in df.iterrows():
             subfolder = str(row['Subfolder ID']).zfill(3)
@@ -92,8 +101,15 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
                 plot_records.append((None, None, None, None, None, None))
                 continue
 
-            delta_px_x = row['MWIR Mast Center X'] - row['EON Mast Center X']
-            delta_px_y = row['MWIR Horizon Y'] - row['EON Horizon Y']
+            eon_x_norm = row['EON Mast Center X'] * (CANVAS_W_PX / EON_IMG_W)
+            eon_y_norm = row['EON Horizon Y'] * (CANVAS_H_PX / EON_IMG_H)
+            
+            mwir_x_norm = row['MWIR Mast Center X'] * (CANVAS_W_PX / MWIR_IMG_W)
+            mwir_y_norm = row['MWIR Horizon Y'] * (CANVAS_H_PX / MWIR_IMG_H)
+
+            delta_px_x = mwir_x_norm - eon_x_norm
+            delta_px_y = mwir_y_norm - eon_y_norm
+            
             delta_m_x = delta_px_x * canvas_gsd_m_px
             delta_m_y = delta_px_y * canvas_gsd_m_px
             mrad_x = (delta_m_x / RANGE_M) * 1000.0
@@ -119,59 +135,51 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
         df['Total Target Misalignment (m)'] = num_tot_miss; df['Co-Boresight Error X (mrad)'] = num_mrad_x
         df['Co-Boresight Error Y (mrad)'] = num_mrad_y; df['Total Co-Boresight Error (mrad)'] = num_tot_mrad
 
-        # High-leverage XlsxWriter Engine Integration
         with pd.ExcelWriter(excel_output_path, engine='xlsxwriter') as writer:
+            
+            constants = [
+                ("Target Range", RANGE_M, "m", "Distance to target"),
+                ("Canvas Width", CANVAS_W_PX, "px", "Virtual reference width for GSD scaling"),
+                ("EON Focal Length", EON_FOCAL_LEN_MM, "mm", "Visible Lens Focal Length"),
+                ("EON Native Pixel Pitch", EON_NATIVE_PITCH_MM, "mm", "Visible Sensor Pixel Size"),
+                ("EON Native Width", EON_NATIVE_W_PX, "px", "Native visible sensor width"),
+                ("MWIR Focal Length", MWIR_FOCAL_LEN_MM, "mm", "Thermal Lens Focal Length"),
+                ("MWIR Native Pixel Pitch", MWIR_NATIVE_PITCH_MM, "mm", "Thermal Sensor Pixel Size"),
+                ("MWIR Native Width", MWIR_NATIVE_W_PX, "px", "Native thermal sensor width")
+            ]
+
+            # Dynamic Row Assignments to prevent overlaps
+            constants_start = 1 # 0-indexed row 1
+            export_start = constants_start + len(constants) + 2
+            DATA_START_ROW = export_start + 2
+
             df.to_excel(writer, index=False, sheet_name='CoBoresight', startrow=DATA_START_ROW-1)
             workbook = writer.book
             worksheet = writer.sheets['CoBoresight']
 
-            # Formats
             header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F47D30', 'font_color': 'white', 'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'border': 1})
             input_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFF2CC', 'border': 1})
             ref_fmt = workbook.add_format({'bg_color': '#F2F2F2', 'border': 1})
             bold_fmt = workbook.add_format({'bold': True})
             reject_fmt = workbook.add_format({'bold': True, 'font_color': 'red', 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
 
-            # Columns
-            worksheet.set_column('A:E', 18)
+            worksheet.set_column('A:E', 21)
             worksheet.set_column('F:F', 30)
             worksheet.set_column('G:Z', 38)
             
-            # Headers & Meta
             worksheet.merge_range('A1:T1', "CO-BORESIGHT MISALIGNMENT EXECUTION SHEET (PHYSICAL METERS-FIRST)", header_fmt)
-            worksheet.write('A2', "1. SYSTEM CONSTANTS", bold_fmt)
             
-            constants = [
-                ("Target Range", RANGE_M, "m", "Distance to target"),
-                ("MWIR Focal Length", MWIR_FOCAL_LEN_MM, "mm", "Physical Lens Focal Length"),
-                ("MWIR Native Pixel Pitch", MWIR_NATIVE_PITCH_MM, "mm", "Physical Sensor Pixel Size"),
-                ("MWIR Native Width", MWIR_NATIVE_W_PX, "px", "Native sensor width from Spec Table"),
-                ("Screenshot Canvas Width", CANVAS_W_PX, "px", "Scaled width of diagnostic images")
-            ]
-            for r_idx, (param, val, unit, desc) in enumerate(constants, start=2):
+            # Write Constants Table
+            worksheet.write(constants_start, 0, "1. SYSTEM CONSTANTS", bold_fmt)
+            for r_idx, (param, val, unit, desc) in enumerate(constants, start=constants_start + 1):
                 worksheet.write(r_idx, 0, param); worksheet.write(r_idx, 1, val, input_fmt)
                 worksheet.write(r_idx, 2, unit); worksheet.write(r_idx, 3, desc)
 
-            worksheet.write('A9', "2. CALCULATED PROFILE REDUCTION PARAMETERS", bold_fmt)
-            worksheet.write_row('A10', ["Parameter", "Ref Code", "Units", "Math Equation (Live Excel Cells)"], bold_fmt)
-            
-            formulas = [
-                ("Pixel Offset", "Delta px", "px", "Delta px = MWIR_Coord - EON_Coord"),
-                ("Canvas GSD", "GSD", "m/px", "GSD = ((Pitch * (NativeW / CanvasW)) / FocalLength) * Range"),
-                ("Target Misalignment", "Delta m", "m", "Delta m = Delta px * GSD"),
-                ("Co-Boresight Angle", "mrad_err", "mrad", "mrad_err = (Delta m / Range) * 1000")
-            ]
-            for r_idx, (param, ref, unit, eq) in enumerate(formulas, start=10):
-                worksheet.write(r_idx, 0, param); worksheet.write(r_idx, 1, ref, ref_fmt)
-                worksheet.write(r_idx, 2, unit); worksheet.write(r_idx, 3, eq)
-
-            worksheet.write('A16', "3. CO-BORESIGHT DATA EXPORT", bold_fmt)
-
-            # Overwrite Pandas default DataFrame headers with custom orange formatting
+            # Write Data Table
+            worksheet.write(export_start, 0, "2. CO-BORESIGHT DATA EXPORT", bold_fmt)
             for col_idx, col_name in enumerate(df.columns):
                 worksheet.write(DATA_START_ROW-1, col_idx, col_name, header_fmt)
 
-            # Plot headers and images
             start_img_col = len(df.columns)
             plot_headers = ['Translation Misalignment X', 'Translation Misalignment Y', 'Total Translation Misalignment', 'Angular Misalignment X', 'Angular Misalignment Y', 'Total Angular Misalignment']
             for col_idx, header in enumerate(plot_headers, start=start_img_col):
@@ -187,5 +195,4 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
                     if os.path.exists(img_path):
                         worksheet.insert_image(row_idx, start_img_col + offset, img_path, {'x_scale': 0.75, 'y_scale': 0.75, 'positioning': 1})
 
-        # At the end of the `with` block, Python will automatically delete the temp_plot_dir and all images inside it.
         return True, f"Successfully generated report: {excel_output_path}", df

@@ -1,12 +1,12 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
-                               QLabel, QLineEdit, QFormLayout, QGroupBox, QTabWidget, QWidget)
+                               QLabel, QLineEdit, QFormLayout, QGroupBox, QTabWidget, QWidget, QScrollArea)
 from PySide6.QtCore import QSettings, Qt
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Global Configuration Settings")
-        self.resize(500, 750)
+        self.resize(550, 800)
         self.settings = QSettings("Shotover", "BoresightTool")
         
         main_layout = QVBoxLayout(self)
@@ -15,57 +15,51 @@ class SettingsDialog(QDialog):
         # ---------------------------------------------------------
         # TAB 1: SYSTEM PROFILES
         # ---------------------------------------------------------
+        self.tab_profiles_scroll = QScrollArea()
+        self.tab_profiles_scroll.setWidgetResizable(True)
         self.tab_profiles = QWidget()
         profile_layout = QVBoxLayout(self.tab_profiles)
         
-        self.nz_group = QGroupBox("Shotover-NZ Defaults")
-        nz_form = QFormLayout(self.nz_group)
-        self.nz_range = QLineEdit(str(self.settings.value("nz/range", 3880.75)))
-        self.nz_focal = QLineEdit(str(self.settings.value("nz/focal", 420.0)))
-        self.nz_pitch = QLineEdit(str(self.settings.value("nz/pitch", 0.010)))
-        self.nz_mwir_w = QLineEdit(str(self.settings.value("nz/mwir_w", 1280.0)))
-        self.nz_canvas = QLineEdit(str(self.settings.value("nz/canvas", 3840.0)))
-        nz_form.addRow("Range (m):", self.nz_range)
-        nz_form.addRow("MWIR Focal Length (mm):", self.nz_focal)
-        nz_form.addRow("MWIR Native Pitch (mm):", self.nz_pitch)
-        nz_form.addRow("MWIR Native Width (px):", self.nz_mwir_w)
-        nz_form.addRow("Canvas Width (px):", self.nz_canvas)
-        profile_layout.addWidget(self.nz_group)
+        self.profile_inputs = {}
         
-        self.boulder_group = QGroupBox("Shotover-Boulder Defaults")
-        boulder_form = QFormLayout(self.boulder_group)
-        self.boulder_range = QLineEdit(str(self.settings.value("boulder/range", 4500.0)))
-        self.boulder_focal = QLineEdit(str(self.settings.value("boulder/focal", 420.0)))
-        self.boulder_pitch = QLineEdit(str(self.settings.value("boulder/pitch", 0.010)))
-        self.boulder_mwir_w = QLineEdit(str(self.settings.value("boulder/mwir_w", 1280.0)))
-        self.boulder_canvas = QLineEdit(str(self.settings.value("boulder/canvas", 3840.0)))
-        boulder_form.addRow("Range (m):", self.boulder_range)
-        boulder_form.addRow("MWIR Focal Length (mm):", self.boulder_focal)
-        boulder_form.addRow("MWIR Native Pitch (mm):", self.boulder_pitch)
-        boulder_form.addRow("MWIR Native Width (px):", self.boulder_mwir_w)
-        boulder_form.addRow("Canvas Width (px):", self.boulder_canvas)
-        profile_layout.addWidget(self.boulder_group)
-        
-        self.user_group = QGroupBox("User Defined Defaults")
-        user_form = QFormLayout(self.user_group)
-        self.user_range = QLineEdit(str(self.settings.value("user/range", 3880.75)))
-        self.user_focal = QLineEdit(str(self.settings.value("user/focal", 420.0)))
-        self.user_pitch = QLineEdit(str(self.settings.value("user/pitch", 0.010)))
-        self.user_mwir_w = QLineEdit(str(self.settings.value("user/mwir_w", 1280.0)))
-        self.user_canvas = QLineEdit(str(self.settings.value("user/canvas", 3840.0)))
-        user_form.addRow("Range (m):", self.user_range)
-        user_form.addRow("MWIR Focal Length (mm):", self.user_focal)
-        user_form.addRow("MWIR Native Pitch (mm):", self.user_pitch)
-        user_form.addRow("MWIR Native Width (px):", self.user_mwir_w)
-        user_form.addRow("Canvas Width (px):", self.user_canvas)
-        profile_layout.addWidget(self.user_group)
+        def add_profile_group(title, prefix, default_range):
+            group = QGroupBox(title)
+            form = QFormLayout(group)
+            
+            inputs = {
+                'range': QLineEdit(str(self.settings.value(f"{prefix}/range", default_range))),
+                'canvas': QLineEdit(str(self.settings.value(f"{prefix}/canvas", 3840.0))),
+                'eon_focal': QLineEdit(str(self.settings.value(f"{prefix}/eon_focal", 504.0))),
+                'eon_pitch': QLineEdit(str(self.settings.value(f"{prefix}/eon_pitch", 0.00274))),
+                'eon_w': QLineEdit(str(self.settings.value(f"{prefix}/eon_w", 5328.0))),
+                'mwir_focal': QLineEdit(str(self.settings.value(f"{prefix}/focal", 420.0))),
+                'mwir_pitch': QLineEdit(str(self.settings.value(f"{prefix}/pitch", 0.010))),
+                'mwir_w': QLineEdit(str(self.settings.value(f"{prefix}/mwir_w", 1280.0)))
+            }
+            
+            form.addRow("Target Range (m):", inputs['range'])
+            form.addRow("Canvas Width (px):", inputs['canvas'])
+            form.addRow("EON Focal Length (mm):", inputs['eon_focal'])
+            form.addRow("EON Native Pitch (mm):", inputs['eon_pitch'])
+            form.addRow("EON Native Width (px):", inputs['eon_w'])
+            form.addRow("MWIR Focal Length (mm):", inputs['mwir_focal'])
+            form.addRow("MWIR Native Pitch (mm):", inputs['mwir_pitch'])
+            form.addRow("MWIR Native Width (px):", inputs['mwir_w'])
+            
+            profile_layout.addWidget(group)
+            self.profile_inputs[prefix] = inputs
+
+        add_profile_group("Shotover-NZ Defaults", "nz", 3880.75)
+        add_profile_group("Shotover-Boulder Defaults", "boulder", 4500.0)
+        add_profile_group("User Defined Defaults", "user", 3880.75)
         
         self.btn_reset_profiles = QPushButton("Restore Factory Profile Defaults")
         self.btn_reset_profiles.setAutoDefault(False)
         self.btn_reset_profiles.clicked.connect(self.reset_profile_defaults)
         profile_layout.addWidget(self.btn_reset_profiles)
         
-        self.tabs.addTab(self.tab_profiles, "System Profiles")
+        self.tab_profiles_scroll.setWidget(self.tab_profiles)
+        self.tabs.addTab(self.tab_profiles_scroll, "System Profiles")
 
         # ---------------------------------------------------------
         # TAB 2: ROI & MASKING CONFIG
@@ -97,6 +91,33 @@ class SettingsDialog(QDialog):
         roi_layout.addWidget(self.btn_reset_roi)
         self.tabs.addTab(self.tab_roi, "ROI & Masking")
 
+        # ---------------------------------------------------------
+        # TAB 3: IMAGE OUTPUT DIMENSIONS
+        # ---------------------------------------------------------
+        self.tab_dims = QWidget()
+        dims_layout = QVBoxLayout(self.tab_dims)
+        
+        self.dims_group = QGroupBox("Camera Image Output Dimensions (Pixels)")
+        dims_form = QFormLayout(self.dims_group)
+        self.inp_eon_w = QLineEdit(str(self.settings.value("dims/eon_w", 3840.0)))
+        self.inp_eon_h = QLineEdit(str(self.settings.value("dims/eon_h", 2160.0)))
+        self.inp_mwir_w = QLineEdit(str(self.settings.value("dims/mwir_w", 1280.0)))
+        self.inp_mwir_h = QLineEdit(str(self.settings.value("dims/mwir_h", 720.0)))
+        
+        dims_form.addRow("EON Output Image Width:", self.inp_eon_w)
+        dims_form.addRow("EON Output Image Height:", self.inp_eon_h)
+        dims_form.addRow("MWIR Output Image Width:", self.inp_mwir_w)
+        dims_form.addRow("MWIR Output Image Height:", self.inp_mwir_h)
+        dims_layout.addWidget(self.dims_group)
+        
+        self.btn_reset_dims = QPushButton("Restore Dimensions")
+        self.btn_reset_dims.setAutoDefault(False)
+        self.btn_reset_dims.clicked.connect(self.reset_dims_defaults)
+        dims_layout.addWidget(self.btn_reset_dims)
+        dims_layout.addStretch()
+        
+        self.tabs.addTab(self.tab_dims, "Image Dimensions")
+
         main_layout.addWidget(self.tabs)
         
         btn_layout = QHBoxLayout()
@@ -114,29 +135,30 @@ class SettingsDialog(QDialog):
         main_layout.addLayout(btn_layout)
 
     def keyPressEvent(self, event):
-        """Intercept Enter key so it doesn't accidentally trigger dialog accept or random buttons"""
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             return 
         super().keyPressEvent(event)
 
     def reset_profile_defaults(self):
-        self.nz_range.setText("3880.75")
-        self.nz_focal.setText("420.0")
-        self.nz_pitch.setText("0.010")
-        self.nz_mwir_w.setText("1280.0")
-        self.nz_canvas.setText("3840.0")
-        
-        self.boulder_range.setText("4500.0")
-        self.boulder_focal.setText("420.0")
-        self.boulder_pitch.setText("0.010")
-        self.boulder_mwir_w.setText("1280.0")
-        self.boulder_canvas.setText("3840.0")
-        
-        self.user_range.setText("3880.75")
-        self.user_focal.setText("420.0")
-        self.user_pitch.setText("0.010")
-        self.user_mwir_w.setText("1280.0")
-        self.user_canvas.setText("3840.0")
+        defaults = {
+            'range': {'nz': '3880.75', 'boulder': '4500.0', 'user': '3880.75'},
+            'canvas': '3840.0',
+            'eon_focal': '504.0',
+            'eon_pitch': '0.00274',
+            'eon_w': '5328.0',
+            'mwir_focal': '420.0',
+            'mwir_pitch': '0.010',
+            'mwir_w': '1280.0'
+        }
+        for prefix, inputs in self.profile_inputs.items():
+            inputs['range'].setText(defaults['range'][prefix])
+            inputs['canvas'].setText(defaults['canvas'])
+            inputs['eon_focal'].setText(defaults['eon_focal'])
+            inputs['eon_pitch'].setText(defaults['eon_pitch'])
+            inputs['eon_w'].setText(defaults['eon_w'])
+            inputs['mwir_focal'].setText(defaults['mwir_focal'])
+            inputs['mwir_pitch'].setText(defaults['mwir_pitch'])
+            inputs['mwir_w'].setText(defaults['mwir_w'])
 
     def reset_roi_defaults(self):
         defaults = {
@@ -147,26 +169,30 @@ class SettingsDialog(QDialog):
         }
         for key, def_val in defaults.items(): self.roi_inputs[key].setText(str(def_val))
 
+    def reset_dims_defaults(self):
+        self.inp_eon_w.setText("3840.0")
+        self.inp_eon_h.setText("2160.0")
+        self.inp_mwir_w.setText("1280.0")
+        self.inp_mwir_h.setText("720.0")
+
     def save_settings(self):
-        self.settings.setValue("nz/range", self.nz_range.text())
-        self.settings.setValue("nz/focal", self.nz_focal.text())
-        self.settings.setValue("nz/pitch", self.nz_pitch.text())
-        self.settings.setValue("nz/mwir_w", self.nz_mwir_w.text())
-        self.settings.setValue("nz/canvas", self.nz_canvas.text())
-        
-        self.settings.setValue("boulder/range", self.boulder_range.text())
-        self.settings.setValue("boulder/focal", self.boulder_focal.text())
-        self.settings.setValue("boulder/pitch", self.boulder_pitch.text())
-        self.settings.setValue("boulder/mwir_w", self.boulder_mwir_w.text())
-        self.settings.setValue("boulder/canvas", self.boulder_canvas.text())
-        
-        self.settings.setValue("user/range", self.user_range.text())
-        self.settings.setValue("user/focal", self.user_focal.text())
-        self.settings.setValue("user/pitch", self.user_pitch.text())
-        self.settings.setValue("user/mwir_w", self.user_mwir_w.text())
-        self.settings.setValue("user/canvas", self.user_canvas.text())
+        for prefix, inputs in self.profile_inputs.items():
+            self.settings.setValue(f"{prefix}/range", inputs['range'].text())
+            self.settings.setValue(f"{prefix}/canvas", inputs['canvas'].text())
+            self.settings.setValue(f"{prefix}/eon_focal", inputs['eon_focal'].text())
+            self.settings.setValue(f"{prefix}/eon_pitch", inputs['eon_pitch'].text())
+            self.settings.setValue(f"{prefix}/eon_w", inputs['eon_w'].text())
+            self.settings.setValue(f"{prefix}/focal", inputs['mwir_focal'].text())
+            self.settings.setValue(f"{prefix}/pitch", inputs['mwir_pitch'].text())
+            self.settings.setValue(f"{prefix}/mwir_w", inputs['mwir_w'].text())
         
         for key, le in self.roi_inputs.items():
             if 'prominence' in key or 'gradient' in key: self.settings.setValue(f"roi/{key}", float(le.text()))
             else: self.settings.setValue(f"roi/{key}", int(float(le.text())))
+
+        self.settings.setValue("dims/eon_w", self.inp_eon_w.text())
+        self.settings.setValue("dims/eon_h", self.inp_eon_h.text())
+        self.settings.setValue("dims/mwir_w", self.inp_mwir_w.text())
+        self.settings.setValue("dims/mwir_h", self.inp_mwir_h.text())
+        
         self.accept()

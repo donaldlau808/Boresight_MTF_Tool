@@ -83,3 +83,38 @@ def test_corrupted_dataframe_data(tmp_path):
         assert "missing required columns" in msg.lower()
     except KeyError as e:
         pytest.fail(f"Engine crashed with an unhandled KeyError on corrupted data: {e}")
+
+def test_weird_image_dimension_scaling(tmp_path):
+    """Verifies coordinates accurately scale from non-standard or mismatched image dimensions."""
+    
+    # Testing EON at 1920x1032 and MWIR at 1366x768
+    valid_df = pd.DataFrame({
+        "Subfolder ID": ["001"], 
+        "EON Mast Center X": [960],  # Absolute center of 1920x1032
+        "EON Horizon Y": [516],     
+        "MWIR Mast Center X": [683], # Absolute center of 1366x768
+        "MWIR Horizon Y": [384],     
+        "Status": ["SUCCESS"]
+    })
+    
+    mock_constants = {
+        'target_range': 4000.0, 
+        'canvas_width': 3840.0,
+        'focal_length': 420.0, 
+        'pixel_pitch': 0.010, 
+        'native_width': 1280.0,
+        'eon_img_w': 1920.0,
+        'eon_img_h': 1032.0,
+        'mwir_img_w': 1366.0,
+        'mwir_img_h': 768.0
+    }
+    
+    out_file = str(tmp_path / "out_weird.xlsx")
+    success, msg, df_out = generate_report(valid_df, out_file, mock_constants)
+    
+    assert success is True
+    # Floating point division with weird resolutions (like 1366) can introduce microscopic precision artifacts, 
+    # so we use pytest.approx to ensure it evaluates to 0.0 safely.
+    assert df_out.iloc[0]['Pixel Offset X (px)'] == pytest.approx(0.0, abs=1e-5)
+    assert df_out.iloc[0]['Pixel Offset Y (px)'] == pytest.approx(0.0, abs=1e-5)
+    assert df_out.iloc[0]['Total Target Misalignment (m)'] == pytest.approx(0.0, abs=1e-5)

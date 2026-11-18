@@ -1,7 +1,5 @@
 from pathlib import Path
 from PySide6.QtCore import QThread, Signal
-from boresight.core import pixel_scraper
-from boresight.core import boresight_eval
 
 class BatchProcessThread(QThread):
     progress_update = Signal(int, str)
@@ -26,7 +24,6 @@ class BatchProcessThread(QThread):
 
         valid_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
         
-        # High-leverage pathlib searching
         eon_dir = self.input_dir / "EON" / subfolder
         mwir_dir = self.input_dir / "MWIR" / subfolder
         
@@ -36,6 +33,9 @@ class BatchProcessThread(QThread):
         return str(eon_img) if eon_img else None, str(mwir_img) if mwir_img else None
 
     def run(self):
+        # Lazy Import for near-instant UI loading
+        from boresight.core import pixel_scraper
+        
         intersection_data = []
         output_results_dir = self.output_dir / "Boresight_Outputs"
 
@@ -63,6 +63,7 @@ class BatchProcessThread(QThread):
 
         self.finished_data.emit(intersection_data, self.folder_list)
 
+
 class ReportGeneratorThread(QThread):
     finished_report = Signal(bool, str, object)
     
@@ -74,6 +75,9 @@ class ReportGeneratorThread(QThread):
         self.active_systems = active_systems
 
     def run(self):
+        # Lazy Import for near-instant UI loading
+        from boresight.core import boresight_eval
+        
         try:
             result = boresight_eval.generate_report(self.df_input, self.excel_output, self.sys_constants, self.active_systems)
             self.finished_report.emit(result[0], result[1], result[2])

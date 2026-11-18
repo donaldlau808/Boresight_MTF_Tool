@@ -11,23 +11,30 @@ class Sidebar(QWidget):
         self.chk_advanced.setStyleSheet("font-weight: bold;")
         sidebar_layout.addWidget(self.chk_advanced)
 
-        dir_group = QGroupBox("Directories")
-        dir_layout = QVBoxLayout(dir_group)
+        self.dir_group = QGroupBox("Directories")
+        dir_layout = QVBoxLayout(self.dir_group)
+        
+        self.batch_input_container = QWidget()
+        batch_input_layout = QVBoxLayout(self.batch_input_container)
+        batch_input_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.dir_input_base = QLineEdit()
         self.dir_input_base.setPlaceholderText("Input Data Directory")
         self.dir_input_base.setReadOnly(True)
         self.btn_browse_input = QPushButton("Browse Input...")
         
+        batch_input_layout.addWidget(QLabel("Input Data (EON/MWIR):"))
+        batch_input_layout.addWidget(self.dir_input_base)
+        batch_input_layout.addWidget(self.btn_browse_input)
+        
         self.dir_output_base = QLineEdit()
         self.dir_output_base.setPlaceholderText("Output Results Directory (Assigned on Run)")
         self.dir_output_base.setReadOnly(True)
         
-        dir_layout.addWidget(QLabel("Input Data (EON/MWIR):"))
-        dir_layout.addWidget(self.dir_input_base)
-        dir_layout.addWidget(self.btn_browse_input)
+        dir_layout.addWidget(self.batch_input_container)
         dir_layout.addWidget(QLabel("Output Directory:"))
         dir_layout.addWidget(self.dir_output_base)
-        sidebar_layout.addWidget(dir_group)
+        sidebar_layout.addWidget(self.dir_group)
 
         list_group = QGroupBox("System Number")
         list_layout = QVBoxLayout(list_group)

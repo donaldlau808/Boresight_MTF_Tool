@@ -50,20 +50,18 @@ class ResizableImageLabel(QGraphicsView):
             painter.end()
 
     def wheelEvent(self, event):
-        if QApplication.keyboardModifiers() == Qt.ControlModifier:
-            zoom_in_factor = 1.15
-            zoom_out_factor = 1 / zoom_in_factor
-            
-            if event.angleDelta().y() > 0:
-                zoom_multiplier = zoom_in_factor
-                self.zoom_factor *= zoom_in_factor
-            else:
-                zoom_multiplier = zoom_out_factor
-                self.zoom_factor *= zoom_out_factor
-                
-            self.scale(zoom_multiplier, zoom_multiplier)
+        zoom_in_factor = 1.15
+        zoom_out_factor = 1 / zoom_in_factor
+        
+        if event.angleDelta().y() > 0:
+            zoom_multiplier = zoom_in_factor
+            self.zoom_factor *= zoom_in_factor
         else:
-            super().wheelEvent(event)
+            zoom_multiplier = zoom_out_factor
+            self.zoom_factor *= zoom_out_factor
+            
+        self.scale(zoom_multiplier, zoom_multiplier)
+        event.accept()
 
     def resizeEvent(self, event):
         if self.current_pixmap and self.zoom_factor == 1.0:
@@ -113,7 +111,7 @@ class ClickableLabel(ResizableImageLabel):
                         break 
 
     def mousePressEvent(self, event):
-        if self.dragMode() == QGraphicsView.ScrollHandDrag and event.button() == Qt.LeftButton and QApplication.keyboardModifiers() != Qt.ControlModifier:
+        if self.dragMode() == QGraphicsView.ScrollHandDrag and event.button() == Qt.LeftButton and QApplication.keyboardModifiers() == Qt.ControlModifier:
             scene_pos = self.mapToScene(event.pos())
             if self.current_pixmap and self.pixmap_item.contains(scene_pos):
                 raw_x, raw_y = int(scene_pos.x()), int(scene_pos.y())
@@ -127,7 +125,8 @@ class ClickableLabel(ResizableImageLabel):
             self.scene.removeItem(line)
         self.crosshair_lines.clear()
         
-        pen = QPen(Qt.red, max(1, int(2 / self.zoom_factor)))
+        pen = QPen(Qt.red, 1)
+        pen.setCosmetic(True)
         w, h = self.current_pixmap.width(), self.current_pixmap.height()
         
         h_line = self.scene.addLine(0, cy, w, cy, pen)

@@ -3,13 +3,11 @@ import re
 import glob
 import shutil
 import tempfile
-import pandas as pd
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QProgressBar, 
                                QStatusBar, QMessageBox, QFileDialog, QInputDialog, 
                                QTabWidget, QTableWidgetItem)
 from PySide6.QtCore import Qt, QSettings
 
-from boresight.core import boresight_eval
 from boresight.core.logger import setup_logger
 from boresight.ui.threads import BatchProcessThread, ReportGeneratorThread
 from boresight.ui.components.settings_dialog import SettingsDialog
@@ -69,10 +67,16 @@ class MainWindow(QMainWindow):
         # --- Test Suite & Legacy Backwards Compatibility Aliases ---
         # Ensures test_ui_workflows.py passes without zero modifications
         self.inp_range = self.c_input_tab.inp_range
+        self.inp_canvas_w = self.c_input_tab.inp_canvas_w
+        
+        self.inp_eon_focal = self.c_input_tab.inp_eon_focal
+        self.inp_eon_pitch = self.c_input_tab.inp_eon_pitch
+        self.inp_eon_w = self.c_input_tab.inp_eon_w
+        
         self.inp_focal = self.c_input_tab.inp_focal
         self.inp_pitch = self.c_input_tab.inp_pitch
         self.inp_mwir_w = self.c_input_tab.inp_mwir_w
-        self.inp_canvas_w = self.c_input_tab.inp_canvas_w
+        
         self.cmb_profile = self.c_input_tab.cmb_profile
         self.eon_label = self.c_input_tab.eon_label
         self.mwir_label = self.c_input_tab.mwir_label
@@ -100,7 +104,7 @@ class MainWindow(QMainWindow):
         self.btn_run_batch = self.c_sidebar.btn_run_batch
         self.btn_cancel = self.c_sidebar.btn_cancel
         self.btn_gen_report = self.c_sidebar.btn_gen_report
-
+        
         # --- Connections ---
         self._connect_signals()
         self.load_profile()
@@ -142,6 +146,7 @@ class MainWindow(QMainWindow):
     def toggle_advanced_mode(self):
         adv_active = self.chk_advanced.isChecked()
         self.c_sidebar.color_group.setVisible(adv_active)
+        self.c_sidebar.batch_input_container.setVisible(adv_active) 
         self.btn_run_batch.setVisible(adv_active)
             
     def _get_roi_config(self):
@@ -295,38 +300,44 @@ class MainWindow(QMainWindow):
 
     def load_profile(self):
         profile = self.cmb_profile.currentText()
-        if profile == "Shotover-NZ":
-            self.inp_range.setText(str(self.settings.value("nz/range", 3880.75)))
-            self.inp_focal.setText(str(self.settings.value("nz/focal", 420.0)))
-            self.inp_pitch.setText(str(self.settings.value("nz/pitch", 0.010)))
-            self.inp_mwir_w.setText(str(self.settings.value("nz/mwir_w", 1280.0)))
-            self.inp_canvas_w.setText(str(self.settings.value("nz/canvas", 3840.0)))
-        elif profile == "Shotover-Boulder":
-            self.inp_range.setText(str(self.settings.value("boulder/range", 4500.0)))
-            self.inp_focal.setText(str(self.settings.value("boulder/focal", 420.0)))
-            self.inp_pitch.setText(str(self.settings.value("boulder/pitch", 0.010)))
-            self.inp_mwir_w.setText(str(self.settings.value("boulder/mwir_w", 1280.0)))
-            self.inp_canvas_w.setText(str(self.settings.value("boulder/canvas", 3840.0)))
-        elif profile == "User Defined":
-            self.inp_range.setText(str(self.settings.value("user/range", 3880.75)))
-            self.inp_focal.setText(str(self.settings.value("user/focal", 420.0)))
-            self.inp_pitch.setText(str(self.settings.value("user/pitch", 0.010)))
-            self.inp_mwir_w.setText(str(self.settings.value("user/mwir_w", 1280.0)))
-            self.inp_canvas_w.setText(str(self.settings.value("user/canvas", 3840.0)))
-        else:
-            self.inp_range.clear(); self.inp_focal.clear(); self.inp_pitch.clear(); self.inp_mwir_w.clear(); self.inp_canvas_w.clear()
+        prefix = "nz" if profile == "Shotover-NZ" else "boulder" if profile == "Shotover-Boulder" else "user"
+        default_range = 4500.0 if prefix == "boulder" else 3880.75
+        
+        self.inp_range.setText(str(self.settings.value(f"{prefix}/range", default_range)))
+        self.inp_canvas_w.setText(str(self.settings.value(f"{prefix}/canvas", 3840.0)))
+        
+        self.inp_eon_focal.setText(str(self.settings.value(f"{prefix}/eon_focal", 504.0)))
+        self.inp_eon_pitch.setText(str(self.settings.value(f"{prefix}/eon_pitch", 0.00274)))
+        self.inp_eon_w.setText(str(self.settings.value(f"{prefix}/eon_w", 5328.0)))
+        
+        self.inp_focal.setText(str(self.settings.value(f"{prefix}/focal", 420.0)))
+        self.inp_pitch.setText(str(self.settings.value(f"{prefix}/pitch", 0.010)))
+        self.inp_mwir_w.setText(str(self.settings.value(f"{prefix}/mwir_w", 1280.0)))
 
     def get_system_constants(self):
         try:
             return {
-                'target_range': float(self.inp_range.text()), 'focal_length': float(self.inp_focal.text()),
-                'pixel_pitch': float(self.inp_pitch.text()), 'native_width': float(self.inp_mwir_w.text()), 'canvas_width': float(self.inp_canvas_w.text())
+                'target_range': float(self.inp_range.text()), 
+                'canvas_width': float(self.inp_canvas_w.text()),
+                
+                'eon_focal_length': float(self.inp_eon_focal.text()),
+                'eon_pixel_pitch': float(self.inp_eon_pitch.text()),
+                'eon_native_width': float(self.inp_eon_w.text()),
+                
+                'focal_length': float(self.inp_focal.text()),
+                'pixel_pitch': float(self.inp_pitch.text()), 
+                'native_width': float(self.inp_mwir_w.text()), 
+                
+                'eon_img_w': float(self.settings.value("dims/eon_w", 3840.0)),
+                'eon_img_h': float(self.settings.value("dims/eon_h", 2160.0)),
+                'mwir_img_w': float(self.settings.value("dims/mwir_w", 1280.0)),
+                'mwir_img_h': float(self.settings.value("dims/mwir_h", 720.0))
             }
         except ValueError:
             self.logger.error("Invalid Constants: Please ensure all System Constants are valid numbers.")
-            QMessageBox.warning(self, "Invalid Input", "System Constants must be valid numbers (no letters or symbols).")
+            QMessageBox.warning(self, "Invalid Input", "System Constants must be valid numbers.")
             return None
-
+    
     def browse_input_directory(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Input Data Directory")
         if not folder: return
@@ -568,6 +579,7 @@ class MainWindow(QMainWindow):
         self.logger.info(msg)
 
     def on_batch_finished(self, intersection_data, folder_list):
+        import pandas as pd
         output_dir = self.dir_output_base.text()
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
         os.makedirs(res_dir, exist_ok=True)
@@ -658,6 +670,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Report Generation Failed", str(msg))
 
     def load_dataframe_to_table(self, df):
+        import pandas as pd
         try:
             df.fillna("", inplace=True)
             self.report_table.setRowCount(df.shape[0])

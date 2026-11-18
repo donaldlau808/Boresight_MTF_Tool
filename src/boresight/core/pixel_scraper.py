@@ -149,14 +149,16 @@ def plot_and_save_side_by_side(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_ma
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize, dpi=dpi)
     
     ax1.imshow(rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max], extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation='nearest')
-    ax1.axvline(x=eon_mast, color="cyan", linestyle="--", linewidth=2)
-    ax1.axhline(y=eon_horizon, color="lime", linestyle="-.", linewidth=2)
+    # CHANGED: Solid red lines for EON
+    ax1.axvline(x=eon_mast, color="red", linestyle="-", linewidth=1.5)
+    ax1.axhline(y=eon_horizon, color="red", linestyle="-", linewidth=1.5)
     ax1.plot(eon_mast, eon_horizon, "ro", markersize=8) 
     ax1.set_title("EON Channel (Visible)", fontsize=16 if is_zoomed else 12, fontweight="bold")
     
     ax2.imshow(rgb_mwir[m_y_min:m_y_max, m_x_min:m_x_max], extent=[m_x_min, m_x_max, m_y_max, m_y_min], interpolation='nearest')
-    ax2.axvline(x=mwir_mast, color="yellow", linestyle="--", linewidth=2)
-    ax2.axhline(y=mwir_horizon, color="lime", linestyle="-.", linewidth=2)
+    # CHANGED: Solid red lines for MWIR
+    ax2.axvline(x=mwir_mast, color="red", linestyle="-", linewidth=1.5)
+    ax2.axhline(y=mwir_horizon, color="red", linestyle="-", linewidth=1.5)
     ax2.plot(mwir_mast, mwir_horizon, "ro", markersize=8) 
     ax2.set_title("MWIR Channel (Thermal)", fontsize=16 if is_zoomed else 12, fontweight="bold")
 
