@@ -28,23 +28,17 @@ class SettingsDialog(QDialog):
             
             inputs = {
                 'range': QLineEdit(str(self.settings.value(f"{prefix}/range", default_range))),
-                'canvas': QLineEdit(str(self.settings.value(f"{prefix}/canvas", 3840.0))),
                 'eon_focal': QLineEdit(str(self.settings.value(f"{prefix}/eon_focal", 504.0))),
                 'eon_pitch': QLineEdit(str(self.settings.value(f"{prefix}/eon_pitch", 0.00274))),
-                'eon_w': QLineEdit(str(self.settings.value(f"{prefix}/eon_w", 5328.0))),
                 'mwir_focal': QLineEdit(str(self.settings.value(f"{prefix}/focal", 420.0))),
-                'mwir_pitch': QLineEdit(str(self.settings.value(f"{prefix}/pitch", 0.010))),
-                'mwir_w': QLineEdit(str(self.settings.value(f"{prefix}/mwir_w", 1280.0)))
+                'mwir_pitch': QLineEdit(str(self.settings.value(f"{prefix}/pitch", 0.010)))
             }
             
             form.addRow("Target Range (m):", inputs['range'])
-            form.addRow("Canvas Width (px):", inputs['canvas'])
             form.addRow("EON Focal Length (mm):", inputs['eon_focal'])
             form.addRow("EON Native Pitch (mm):", inputs['eon_pitch'])
-            form.addRow("EON Native Width (px):", inputs['eon_w'])
             form.addRow("MWIR Focal Length (mm):", inputs['mwir_focal'])
             form.addRow("MWIR Native Pitch (mm):", inputs['mwir_pitch'])
-            form.addRow("MWIR Native Width (px):", inputs['mwir_w'])
             
             profile_layout.addWidget(group)
             self.profile_inputs[prefix] = inputs
@@ -142,23 +136,17 @@ class SettingsDialog(QDialog):
     def reset_profile_defaults(self):
         defaults = {
             'range': {'nz': '3880.75', 'boulder': '4500.0', 'user': '3880.75'},
-            'canvas': '3840.0',
             'eon_focal': '504.0',
             'eon_pitch': '0.00274',
-            'eon_w': '5328.0',
             'mwir_focal': '420.0',
             'mwir_pitch': '0.010',
-            'mwir_w': '1280.0'
         }
         for prefix, inputs in self.profile_inputs.items():
             inputs['range'].setText(defaults['range'][prefix])
-            inputs['canvas'].setText(defaults['canvas'])
             inputs['eon_focal'].setText(defaults['eon_focal'])
             inputs['eon_pitch'].setText(defaults['eon_pitch'])
-            inputs['eon_w'].setText(defaults['eon_w'])
             inputs['mwir_focal'].setText(defaults['mwir_focal'])
             inputs['mwir_pitch'].setText(defaults['mwir_pitch'])
-            inputs['mwir_w'].setText(defaults['mwir_w'])
 
     def reset_roi_defaults(self):
         defaults = {
@@ -178,13 +166,10 @@ class SettingsDialog(QDialog):
     def save_settings(self):
         for prefix, inputs in self.profile_inputs.items():
             self.settings.setValue(f"{prefix}/range", inputs['range'].text())
-            self.settings.setValue(f"{prefix}/canvas", inputs['canvas'].text())
             self.settings.setValue(f"{prefix}/eon_focal", inputs['eon_focal'].text())
             self.settings.setValue(f"{prefix}/eon_pitch", inputs['eon_pitch'].text())
-            self.settings.setValue(f"{prefix}/eon_w", inputs['eon_w'].text())
             self.settings.setValue(f"{prefix}/focal", inputs['mwir_focal'].text())
             self.settings.setValue(f"{prefix}/pitch", inputs['mwir_pitch'].text())
-            self.settings.setValue(f"{prefix}/mwir_w", inputs['mwir_w'].text())
         
         for key, le in self.roi_inputs.items():
             if 'prominence' in key or 'gradient' in key: self.settings.setValue(f"roi/{key}", float(le.text()))

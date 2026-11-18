@@ -237,29 +237,23 @@ class MainController(QObject):
         default_range = 4500.0 if prefix == "boulder" else 3880.75
         
         self.view.inp_range.setText(str(self.settings.value(f"{prefix}/range", default_range)))
-        self.view.inp_canvas_w.setText(str(self.settings.value(f"{prefix}/canvas", 3840.0)))
         
         self.view.inp_eon_focal.setText(str(self.settings.value(f"{prefix}/eon_focal", 504.0)))
         self.view.inp_eon_pitch.setText(str(self.settings.value(f"{prefix}/eon_pitch", 0.00274)))
-        self.view.inp_eon_w.setText(str(self.settings.value(f"{prefix}/eon_w", 5328.0)))
         
         self.view.inp_focal.setText(str(self.settings.value(f"{prefix}/focal", 420.0)))
         self.view.inp_pitch.setText(str(self.settings.value(f"{prefix}/pitch", 0.010)))
-        self.view.inp_mwir_w.setText(str(self.settings.value(f"{prefix}/mwir_w", 1280.0)))
 
     def get_system_constants(self):
         try:
             return {
                 'target_range': float(self.view.inp_range.text()), 
-                'canvas_width': float(self.view.inp_canvas_w.text()),
                 
                 'eon_focal_length': float(self.view.inp_eon_focal.text()),
                 'eon_pixel_pitch': float(self.view.inp_eon_pitch.text()),
-                'eon_native_width': float(self.view.inp_eon_w.text()),
                 
                 'focal_length': float(self.view.inp_focal.text()),
                 'pixel_pitch': float(self.view.inp_pitch.text()), 
-                'native_width': float(self.view.inp_mwir_w.text()), 
                 
                 'eon_img_w': float(self.settings.value("dims/eon_w", 3840.0)),
                 'eon_img_h': float(self.settings.value("dims/eon_h", 2160.0)),

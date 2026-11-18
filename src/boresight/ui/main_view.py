@@ -42,15 +42,12 @@ class MainView(QMainWindow):
 
         # Aliases for rapid element access
         self.inp_range = self.c_input_tab.inp_range
-        self.inp_canvas_w = self.c_input_tab.inp_canvas_w
         
         self.inp_eon_focal = self.c_input_tab.inp_eon_focal
         self.inp_eon_pitch = self.c_input_tab.inp_eon_pitch
-        self.inp_eon_w = self.c_input_tab.inp_eon_w
         
         self.inp_focal = self.c_input_tab.inp_focal
         self.inp_pitch = self.c_input_tab.inp_pitch
-        self.inp_mwir_w = self.c_input_tab.inp_mwir_w
         
         self.cmb_profile = self.c_input_tab.cmb_profile
         self.eon_label = self.c_input_tab.eon_label

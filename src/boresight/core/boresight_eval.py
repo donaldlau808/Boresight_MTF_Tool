@@ -49,23 +49,20 @@ def create_misalignment_plot(val_x, val_y, max_scale, unit, plot_type, title_tex
 
 def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constants: dict, active_systems: list = None):
     RANGE_M = float(sys_constants.get('target_range', 3880.75))
-    CANVAS_W_PX = float(sys_constants.get('canvas_width', 3840.0))
     
     EON_FOCAL_LEN_MM = float(sys_constants.get('eon_focal_length', 504.0))
     EON_NATIVE_PITCH_MM = float(sys_constants.get('eon_pixel_pitch', 0.00274))
-    EON_NATIVE_W_PX = float(sys_constants.get('eon_native_width', 5328.0))
     
     MWIR_FOCAL_LEN_MM = float(sys_constants.get('focal_length', 420.0))
     MWIR_NATIVE_PITCH_MM = float(sys_constants.get('pixel_pitch', 0.010))
-    MWIR_NATIVE_W_PX = float(sys_constants.get('native_width', 1280.0))
     
     EON_IMG_W = float(sys_constants.get('eon_img_w', 3840.0))
     EON_IMG_H = float(sys_constants.get('eon_img_h', 2160.0))
     MWIR_IMG_W = float(sys_constants.get('mwir_img_w', 1280.0))
     MWIR_IMG_H = float(sys_constants.get('mwir_img_h', 720.0))
 
-    if RANGE_M <= 0 or MWIR_FOCAL_LEN_MM <= 0:
-        return False, "Target Range and Focal Length must be greater than zero.", None
+    if RANGE_M <= 0 or MWIR_FOCAL_LEN_MM <= 0 or EON_FOCAL_LEN_MM <= 0:
+        return False, "Target Range and Focal Lengths must be greater than zero.", None
 
     PLOT_MAX_SCALE_M = 1.0     
     PLOT_MAX_SCALE_MRAD = (PLOT_MAX_SCALE_M / RANGE_M) * 1000.0  
@@ -89,9 +86,13 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
         plot_records = []
         num_px_x, num_px_y, num_miss_x, num_miss_y, num_tot_miss, num_mrad_x, num_mrad_y, num_tot_mrad = [], [], [], [], [], [], [], []
         
-        eff_pitch_mm = MWIR_NATIVE_PITCH_MM * (MWIR_NATIVE_W_PX / CANVAS_W_PX)
-        canvas_gsd_m_px = (eff_pitch_mm / MWIR_FOCAL_LEN_MM) * RANGE_M
-        CANVAS_H_PX = CANVAS_W_PX * (EON_IMG_H / EON_IMG_W)
+        # 1. Calculate Angular Resolution (mrad per pixel) for each camera independently
+        eon_mrad_per_px = (EON_NATIVE_PITCH_MM / EON_FOCAL_LEN_MM) * 1000.0
+        mwir_mrad_per_px = (MWIR_NATIVE_PITCH_MM / MWIR_FOCAL_LEN_MM) * 1000.0
+
+        # 2. Determine the Optical Center (Middle Pixel) of both image outputs
+        eon_cx, eon_cy = EON_IMG_W / 2.0, EON_IMG_H / 2.0
+        mwir_cx, mwir_cy = MWIR_IMG_W / 2.0, MWIR_IMG_H / 2.0
 
         for i, row in df.iterrows():
             subfolder = str(row['Subfolder ID']).zfill(3)
@@ -101,19 +102,31 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
                 plot_records.append((None, None, None, None, None, None))
                 continue
 
-            eon_x_norm = row['EON Mast Center X'] * (CANVAS_W_PX / EON_IMG_W)
-            eon_y_norm = row['EON Horizon Y'] * (CANVAS_H_PX / EON_IMG_H)
+            # 3. Calculate distance from the optical center in pixels
+            eon_off_px_x = row['EON Mast Center X'] - eon_cx
+            eon_off_px_y = row['EON Horizon Y'] - eon_cy
             
-            mwir_x_norm = row['MWIR Mast Center X'] * (CANVAS_W_PX / MWIR_IMG_W)
-            mwir_y_norm = row['MWIR Horizon Y'] * (CANVAS_H_PX / MWIR_IMG_H)
+            mwir_off_px_x = row['MWIR Mast Center X'] - mwir_cx
+            mwir_off_px_y = row['MWIR Horizon Y'] - mwir_cy
 
-            delta_px_x = mwir_x_norm - eon_x_norm
-            delta_px_y = mwir_y_norm - eon_y_norm
+            # 4. Convert to independent true angles (mrad) from optical center
+            eon_ang_x = eon_off_px_x * eon_mrad_per_px
+            eon_ang_y = eon_off_px_y * eon_mrad_per_px
             
-            delta_m_x = delta_px_x * canvas_gsd_m_px
-            delta_m_y = delta_px_y * canvas_gsd_m_px
-            mrad_x = (delta_m_x / RANGE_M) * 1000.0
-            mrad_y = (delta_m_y / RANGE_M) * 1000.0
+            mwir_ang_x = mwir_off_px_x * mwir_mrad_per_px
+            mwir_ang_y = mwir_off_px_y * mwir_mrad_per_px
+
+            # 5. Calculate Co-Boresight Angular Error (subtracting true angles)
+            mrad_x = mwir_ang_x - eon_ang_x
+            mrad_y = mwir_ang_y - eon_ang_y
+
+            # 6. Convert angular error to physical target misalignment at range
+            delta_m_x = (mrad_x / 1000.0) * RANGE_M
+            delta_m_y = (mrad_y / 1000.0) * RANGE_M
+            
+            # Optional visual Pixel Offset represented in terms of the MWIR feed
+            delta_px_x = mrad_x / mwir_mrad_per_px
+            delta_px_y = mrad_y / mwir_mrad_per_px
             
             num_px_x.append(round(delta_px_x, 2)); num_px_y.append(round(delta_px_y, 2))
             num_miss_x.append(round(delta_m_x, 3)); num_miss_y.append(round(delta_m_y, 3))
@@ -139,13 +152,10 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
             
             constants = [
                 ("Target Range", RANGE_M, "m", "Distance to target"),
-                ("Canvas Width", CANVAS_W_PX, "px", "Virtual reference width for GSD scaling"),
                 ("EON Focal Length", EON_FOCAL_LEN_MM, "mm", "Visible Lens Focal Length"),
                 ("EON Native Pixel Pitch", EON_NATIVE_PITCH_MM, "mm", "Visible Sensor Pixel Size"),
-                ("EON Native Width", EON_NATIVE_W_PX, "px", "Native visible sensor width"),
                 ("MWIR Focal Length", MWIR_FOCAL_LEN_MM, "mm", "Thermal Lens Focal Length"),
-                ("MWIR Native Pixel Pitch", MWIR_NATIVE_PITCH_MM, "mm", "Thermal Sensor Pixel Size"),
-                ("MWIR Native Width", MWIR_NATIVE_W_PX, "px", "Native thermal sensor width")
+                ("MWIR Native Pixel Pitch", MWIR_NATIVE_PITCH_MM, "mm", "Thermal Sensor Pixel Size")
             ]
 
             # Dynamic Row Assignments to prevent overlaps
