@@ -75,7 +75,7 @@ class ReportGeneratorThread(QThread):
         self.active_systems = active_systems
 
     def run(self):
-        # Lazy Import for near-instant UI loading
+        # Lazy Import
         from boresight.core import boresight_eval
         
         try:

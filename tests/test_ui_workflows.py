@@ -6,7 +6,8 @@ from PySide6.QtCore import Qt, QMimeData, QUrl, QPointF
 from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 
-from boresight.ui.main_window import MainWindow
+from boresight.ui.main_view import MainView
+from boresight.ui.main_controller import MainController
 
 @pytest.fixture(scope="session")
 def qapp():
@@ -19,20 +20,21 @@ def qapp():
 
 @pytest.fixture
 def main_win(qapp, tmp_path, monkeypatch):
-    """Creates a clean MainWindow instance with all modal dialogs mocked so CI never blocks."""
+    """Creates a clean MainController instance with all modal dialogs mocked so CI never blocks."""
     warnings = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: warnings.append(("warning", args)))
     monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: warnings.append(("critical", args)))
     monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: warnings.append(("info", args)))
 
-    win = MainWindow()
+    view = MainView()
+    win = MainController(view)
     win._test_warnings = warnings
     out_dir = tmp_path / "Test_Outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
     win.dir_output_base.setText(str(out_dir))
 
     yield win
-    win.close()
+    view.close()
 
 
 def _make_solid_image(path, bgr_color=(50, 100, 150), size=(80, 80)):

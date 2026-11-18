@@ -3,31 +3,29 @@ import re
 import glob
 import shutil
 import tempfile
-from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QProgressBar, 
-                               QStatusBar, QMessageBox, QFileDialog, QInputDialog, 
-                               QTabWidget, QTableWidgetItem)
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtWidgets import QMessageBox, QFileDialog, QInputDialog, QTableWidgetItem
+from PySide6.QtCore import QSettings, Qt, QObject
 
 from boresight.core.logger import setup_logger
 from boresight.ui.threads import BatchProcessThread, ReportGeneratorThread
 from boresight.ui.components.settings_dialog import SettingsDialog
-from boresight.ui.components.input_tab import InputTab
-from boresight.ui.components.output_tab import OutputTab
-from boresight.ui.components.report_tab import ReportTab
-from boresight.ui.components.sidebar import Sidebar
 
-
-class MainWindow(QMainWindow):
-    VALID_EXTS = ('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')
-
-    def __init__(self):
+class MainController(QObject):
+    def __init__(self, view):
         super().__init__()
-        self.setWindowTitle("Boresight MTF Evaluation Tool")
-        self.resize(1400, 950)
+        self.view = view
         self.settings = QSettings("Shotover", "BoresightTool")
         self.logger, self.log_emitter = setup_logger()
         
-        # --- App State ---
+        # --- Aliases required to keep legacy Pytests passing without rewrites ---
+        self.dir_input_base = self.view.dir_input_base
+        self.dir_output_base = self.view.dir_output_base
+        self.eon_label = self.view.eon_label
+        self.mwir_label = self.view.mwir_label
+        self.folder_list = self.view.folder_list
+        self.chk_orange = self.view.chk_orange
+
+        # --- Internal State ---
         self.system_manual_coords = {}
         self.system_image_paths = {}
         self.fresh_systems = set()
@@ -37,75 +35,6 @@ class MainWindow(QMainWindow):
         self.report_thread = None
         self.df_intersections = None
 
-        # --- UI Construction ---
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-
-        self.tabs = QTabWidget()
-        self.c_input_tab = InputTab()
-        self.c_output_tab = OutputTab()
-        self.c_report_tab = ReportTab()
-        self.tabs.addTab(self.c_input_tab, "1. Pre-Processing Inputs")
-        self.tabs.addTab(self.c_output_tab, "2. Post-Processing Diagnostics")
-        self.tabs.addTab(self.c_report_tab, "3. Data Report Viewer")
-        
-        self.c_sidebar = Sidebar()
-        
-        main_layout.addWidget(self.tabs)
-        main_layout.addWidget(self.c_sidebar)
-
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumWidth(300)
-        self.progress_bar.setAlignment(Qt.AlignCenter)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Ready")
-        self.status_bar.addPermanentWidget(self.progress_bar)
-
-        # --- Test Suite & Legacy Backwards Compatibility Aliases ---
-        # Ensures test_ui_workflows.py passes without zero modifications
-        self.inp_range = self.c_input_tab.inp_range
-        self.inp_canvas_w = self.c_input_tab.inp_canvas_w
-        
-        self.inp_eon_focal = self.c_input_tab.inp_eon_focal
-        self.inp_eon_pitch = self.c_input_tab.inp_eon_pitch
-        self.inp_eon_w = self.c_input_tab.inp_eon_w
-        
-        self.inp_focal = self.c_input_tab.inp_focal
-        self.inp_pitch = self.c_input_tab.inp_pitch
-        self.inp_mwir_w = self.c_input_tab.inp_mwir_w
-        
-        self.cmb_profile = self.c_input_tab.cmb_profile
-        self.eon_label = self.c_input_tab.eon_label
-        self.mwir_label = self.c_input_tab.mwir_label
-        
-        self.diag_side_by_side = self.c_output_tab.diag_side_by_side
-        self.diag_eon_mask = self.c_output_tab.diag_eon_mask
-        self.diag_mwir_mask = self.c_output_tab.diag_mwir_mask
-        
-        self.report_table = self.c_report_tab.report_table
-        
-        self.chk_advanced = self.c_sidebar.chk_advanced
-        self.dir_input_base = self.c_sidebar.dir_input_base
-        self.btn_browse_input = self.c_sidebar.btn_browse_input
-        self.dir_output_base = self.c_sidebar.dir_output_base
-        self.folder_list = self.c_sidebar.folder_list
-        self.btn_remove_system = self.c_sidebar.btn_remove_system
-        self.lbl_manual_status = self.c_sidebar.lbl_manual_status
-        self.btn_run_manual = self.c_sidebar.btn_run_manual
-        self.btn_clear_manual = self.c_sidebar.btn_clear_manual
-        self.btn_clear_all_manual = self.c_sidebar.btn_clear_all_manual
-        self.chk_orange = self.c_sidebar.chk_orange
-        self.chk_green = self.c_sidebar.chk_green
-        self.chk_white = self.c_sidebar.chk_white
-        self.log_viewer = self.c_sidebar.log_viewer
-        self.btn_run_batch = self.c_sidebar.btn_run_batch
-        self.btn_cancel = self.c_sidebar.btn_cancel
-        self.btn_gen_report = self.c_sidebar.btn_gen_report
-
-        # --- Connections ---
         self._connect_signals()
         self.load_profile()
         self.toggle_advanced_mode()
@@ -113,42 +42,42 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self):
         self.log_emitter.log_signal.connect(self.append_log)
-        self.cmb_profile.currentIndexChanged.connect(self.load_profile)
-        self.c_input_tab.btn_settings.clicked.connect(self.open_settings)
-        self.eon_label.coordinate_clicked.connect(self.register_click)
-        self.eon_label.image_dropped.connect(self.handle_image_drop)
-        self.mwir_label.coordinate_clicked.connect(self.register_click)
-        self.mwir_label.image_dropped.connect(self.handle_image_drop)
+        self.view.cmb_profile.currentIndexChanged.connect(self.load_profile)
+        self.view.c_input_tab.btn_settings.clicked.connect(self.open_settings)
         
-        self.chk_advanced.stateChanged.connect(self.toggle_advanced_mode)
-        self.btn_browse_input.clicked.connect(self.browse_input_directory)
-        self.folder_list.itemSelectionChanged.connect(self.load_selected_folder)
-        self.btn_remove_system.clicked.connect(self.remove_selected_system)
+        self.view.eon_label.coordinate_clicked.connect(self.register_click)
+        self.view.eon_label.image_dropped.connect(self.handle_image_drop)
+        self.view.mwir_label.coordinate_clicked.connect(self.register_click)
+        self.view.mwir_label.image_dropped.connect(self.handle_image_drop)
         
-        self.btn_run_manual.clicked.connect(self.run_manual_processing)
-        self.btn_clear_manual.clicked.connect(self.clear_manual_coords)
-        self.btn_clear_all_manual.clicked.connect(self.clear_all_manual_coords)
+        self.view.chk_advanced.stateChanged.connect(self.toggle_advanced_mode)
+        self.view.btn_browse_input.clicked.connect(self.browse_input_directory)
+        self.view.folder_list.itemSelectionChanged.connect(self.load_selected_folder)
+        self.view.btn_remove_system.clicked.connect(self.remove_selected_system)
         
-        self.chk_orange.stateChanged.connect(self.invalidate_report)
-        self.chk_green.stateChanged.connect(self.invalidate_report)
-        self.chk_white.stateChanged.connect(self.invalidate_report)
+        self.view.btn_run_manual.clicked.connect(self.run_manual_processing)
+        self.view.btn_clear_manual.clicked.connect(self.clear_manual_coords)
+        self.view.btn_clear_all_manual.clicked.connect(self.clear_all_manual_coords)
         
-        self.btn_run_batch.clicked.connect(self.run_batch_processing)
-        self.btn_cancel.clicked.connect(self.cancel_processing)
-        self.btn_gen_report.clicked.connect(self.generate_excel_report)
+        self.view.chk_orange.stateChanged.connect(self.invalidate_report)
+        self.view.chk_green.stateChanged.connect(self.invalidate_report)
+        self.view.chk_white.stateChanged.connect(self.invalidate_report)
+        
+        self.view.btn_run_batch.clicked.connect(self.run_batch_processing)
+        self.view.btn_cancel.clicked.connect(self.cancel_processing)
+        self.view.btn_gen_report.clicked.connect(self.generate_excel_report)
+        
+        self.view.view_closing.connect(self.cleanup)
 
-    # ==========================================
-    # LOGIC CONTROLLER METHODS
-    # ==========================================
     def invalidate_report(self, *args, **kwargs):
-        self.btn_gen_report.setEnabled(False)
+        self.view.btn_gen_report.setEnabled(False)
 
     def toggle_advanced_mode(self):
-        adv_active = self.chk_advanced.isChecked()
-        self.c_sidebar.color_group.setVisible(adv_active)
-        self.c_sidebar.batch_input_container.setVisible(adv_active) 
-        self.btn_run_batch.setVisible(adv_active)
-            
+        adv_active = self.view.chk_advanced.isChecked()
+        self.view.c_sidebar.color_group.setVisible(adv_active)
+        self.view.c_sidebar.batch_input_container.setVisible(adv_active)
+        self.view.btn_run_batch.setVisible(adv_active)
+        
     def _get_roi_config(self):
         defaults = {
             'roi_x_min': 940, 'roi_x_max': 980, 'roi_y_min': 420, 'roi_y_max': 560,
@@ -188,10 +117,11 @@ class MainWindow(QMainWindow):
 
     def _get_valid_images(self, folder_path):
         if not folder_path or not os.path.isdir(folder_path): return []
+        valid_exts = ('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')
         valid = []
         try:
             for entry in os.scandir(folder_path):
-                if entry.is_file() and entry.name.lower().endswith(self.VALID_EXTS):
+                if entry.is_file() and entry.name.lower().endswith(valid_exts):
                     try:
                         if entry.stat().st_size > 0: valid.append(entry.path)
                     except OSError: pass
@@ -212,9 +142,12 @@ class MainWindow(QMainWindow):
         return True
 
     def _clear_all_viewports(self):
-        self.eon_label.clear_image(); self.mwir_label.clear_image()
-        self.diag_side_by_side.clear_image(); self.diag_eon_mask.clear_image(); self.diag_mwir_mask.clear_image()
-        self.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
+        self.view.eon_label.clear_image()
+        self.view.mwir_label.clear_image()
+        self.view.diag_side_by_side.clear_image()
+        self.view.diag_eon_mask.clear_image()
+        self.view.diag_mwir_mask.clear_image()
+        self.view.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
 
     def handle_image_drop(self, channel, file_path):
         file_path = os.path.normpath(file_path)
@@ -227,7 +160,7 @@ class MainWindow(QMainWindow):
                 return
         except OSError: return
             
-        raw_num, ok = QInputDialog.getText(self, "System Number Request", f"Enter the System Number for this {channel} image:")
+        raw_num, ok = QInputDialog.getText(self.view, "System Number Request", f"Enter the System Number for this {channel} image:")
         if not ok or not raw_num.strip(): return
             
         system_num = self._sanitize_system_id(raw_num)
@@ -244,7 +177,7 @@ class MainWindow(QMainWindow):
             self.logger.info(f"Loaded {os.path.basename(file_path)} into System {system_num} ({channel})")
         except Exception as e:
             self.logger.error(f"Failed to load dropped image: {e}")
-            QMessageBox.warning(self, "Load Error", f"Could not copy the dropped image:\n{e}")
+            QMessageBox.warning(self.view, "Load Error", f"Could not copy the dropped image:\n{e}")
             return
 
         if system_num not in self.system_image_paths:
@@ -260,73 +193,73 @@ class MainWindow(QMainWindow):
             self.system_manual_coords[system_num]['mwir_x'] = None
             self.system_manual_coords[system_num]['mwir_y'] = None
 
-        existing_items = [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
+        existing_items = [self.view.folder_list.item(i).text() for i in range(self.view.folder_list.count())]
         if system_num not in existing_items:
             existing_items.append(system_num)
-            self.folder_list.clear()
-            for item_text in sorted(existing_items): self.folder_list.addItem(item_text)
+            self.view.folder_list.clear()
+            for item_text in sorted(existing_items): self.view.folder_list.addItem(item_text)
 
-        items = self.folder_list.findItems(system_num, Qt.MatchExactly)
+        items = self.view.folder_list.findItems(system_num, Qt.MatchExactly)
         if items:
-            if self.folder_list.currentItem() == items[0]: self.load_selected_folder()
-            else: self.folder_list.setCurrentItem(items[0])
+            if self.view.folder_list.currentItem() == items[0]: self.load_selected_folder()
+            else: self.view.folder_list.setCurrentItem(items[0])
             
         self.invalidate_report()
 
     def remove_selected_system(self):
-        if not self.folder_list.currentItem():
-            QMessageBox.warning(self, "No Selection", "Please select a System Number to remove.")
+        if not self.view.folder_list.currentItem():
+            QMessageBox.warning(self.view, "No Selection", "Please select a System Number to remove.")
             return
-        system_num = self.folder_list.currentItem().text()
-        row = self.folder_list.currentRow()
-        self.folder_list.takeItem(row)
+        system_num = self.view.folder_list.currentItem().text()
+        row = self.view.folder_list.currentRow()
+        self.view.folder_list.takeItem(row)
         self.system_manual_coords.pop(system_num, None)
         self.system_image_paths.pop(system_num, None)
         self.fresh_systems.discard(system_num)
         for ch in ("EON", "MWIR"): shutil.rmtree(os.path.join(self.drop_cache_dir, ch, system_num), ignore_errors=True)
         self.logger.info(f"Removed System {system_num} from current processing queue.")
-        if self.folder_list.count() == 0: self._clear_all_viewports()
+        if self.view.folder_list.count() == 0: self._clear_all_viewports()
         self.invalidate_report()
 
     def append_log(self, level, msg):
         color = "#000000"
         if level in ["WARNING", "ERROR", "CRITICAL"]: color = "#D32F2F"; msg = f"⚠ {msg}"
-        self.log_viewer.append(f"<span style='color:{color};'>{msg}</span>")
-        self.log_viewer.verticalScrollBar().setValue(self.log_viewer.verticalScrollBar().maximum())
+        self.view.log_viewer.append(f"<span style='color:{color};'>{msg}</span>")
+        self.view.log_viewer.verticalScrollBar().setValue(self.view.log_viewer.verticalScrollBar().maximum())
 
     def open_settings(self):
-        dialog = SettingsDialog(self)
+        dialog = SettingsDialog(self.view)
         if dialog.exec(): self.load_profile()
 
     def load_profile(self):
-        profile = self.cmb_profile.currentText()
+        profile = self.view.cmb_profile.currentText()
         prefix = "nz" if profile == "Shotover-NZ" else "boulder" if profile == "Shotover-Boulder" else "user"
         default_range = 4500.0 if prefix == "boulder" else 3880.75
         
-        self.inp_range.setText(str(self.settings.value(f"{prefix}/range", default_range)))
-        self.inp_canvas_w.setText(str(self.settings.value(f"{prefix}/canvas", 3840.0)))
+        self.view.inp_range.setText(str(self.settings.value(f"{prefix}/range", default_range)))
+        self.view.inp_canvas_w.setText(str(self.settings.value(f"{prefix}/canvas", 3840.0)))
         
-        self.inp_eon_focal.setText(str(self.settings.value(f"{prefix}/eon_focal", 504.0)))
-        self.inp_eon_pitch.setText(str(self.settings.value(f"{prefix}/eon_pitch", 0.00274)))
-        self.inp_eon_w.setText(str(self.settings.value(f"{prefix}/eon_w", 5328.0)))
+        self.view.inp_eon_focal.setText(str(self.settings.value(f"{prefix}/eon_focal", 504.0)))
+        self.view.inp_eon_pitch.setText(str(self.settings.value(f"{prefix}/eon_pitch", 0.00274)))
+        self.view.inp_eon_w.setText(str(self.settings.value(f"{prefix}/eon_w", 5328.0)))
         
-        self.inp_focal.setText(str(self.settings.value(f"{prefix}/focal", 420.0)))
-        self.inp_pitch.setText(str(self.settings.value(f"{prefix}/pitch", 0.010)))
-        self.inp_mwir_w.setText(str(self.settings.value(f"{prefix}/mwir_w", 1280.0)))
+        self.view.inp_focal.setText(str(self.settings.value(f"{prefix}/focal", 420.0)))
+        self.view.inp_pitch.setText(str(self.settings.value(f"{prefix}/pitch", 0.010)))
+        self.view.inp_mwir_w.setText(str(self.settings.value(f"{prefix}/mwir_w", 1280.0)))
 
     def get_system_constants(self):
         try:
             return {
-                'target_range': float(self.inp_range.text()), 
-                'canvas_width': float(self.inp_canvas_w.text()),
+                'target_range': float(self.view.inp_range.text()), 
+                'canvas_width': float(self.view.inp_canvas_w.text()),
                 
-                'eon_focal_length': float(self.inp_eon_focal.text()),
-                'eon_pixel_pitch': float(self.inp_eon_pitch.text()),
-                'eon_native_width': float(self.inp_eon_w.text()),
+                'eon_focal_length': float(self.view.inp_eon_focal.text()),
+                'eon_pixel_pitch': float(self.view.inp_eon_pitch.text()),
+                'eon_native_width': float(self.view.inp_eon_w.text()),
                 
-                'focal_length': float(self.inp_focal.text()),
-                'pixel_pitch': float(self.inp_pitch.text()), 
-                'native_width': float(self.inp_mwir_w.text()), 
+                'focal_length': float(self.view.inp_focal.text()),
+                'pixel_pitch': float(self.view.inp_pitch.text()), 
+                'native_width': float(self.view.inp_mwir_w.text()), 
                 
                 'eon_img_w': float(self.settings.value("dims/eon_w", 3840.0)),
                 'eon_img_h': float(self.settings.value("dims/eon_h", 2160.0)),
@@ -335,11 +268,11 @@ class MainWindow(QMainWindow):
             }
         except ValueError:
             self.logger.error("Invalid Constants: Please ensure all System Constants are valid numbers.")
-            QMessageBox.warning(self, "Invalid Input", "System Constants must be valid numbers.")
+            QMessageBox.warning(self.view, "Invalid Input", "System Constants must be valid numbers.")
             return None
-    
+
     def browse_input_directory(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Input Data Directory")
+        folder = QFileDialog.getExistingDirectory(self.view, "Select Input Data Directory")
         if not folder: return
         folder = os.path.normpath(folder)
         if os.path.basename(folder).upper() in ("EON", "MWIR"):
@@ -347,25 +280,25 @@ class MainWindow(QMainWindow):
             if self._find_channel_dir(parent, "EON") and self._find_channel_dir(parent, "MWIR"):
                 self.logger.info(f"Detected '{os.path.basename(folder)}' subfolder; using parent directory: {parent}")
                 folder = parent
-        self.dir_input_base.setText(folder)
+        self.view.dir_input_base.setText(folder)
         self.populate_folder_list(folder)
 
     def browse_output_directory(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Destination Output Directory")
+        folder = QFileDialog.getExistingDirectory(self.view, "Select Destination Output Directory")
         if not folder: return False
         folder = os.path.normpath(folder)
         if not self._is_dir_writable(folder):
-            QMessageBox.critical(self, "Read-Only Directory", f"The selected output directory is not writable:\n{folder}\n\nPlease choose a folder where you have write permissions.")
+            QMessageBox.critical(self.view, "Read-Only Directory", f"The selected output directory is not writable:\n{folder}\n\nPlease choose a folder where you have write permissions.")
             return False
         if os.path.basename(folder).upper() in ("EON", "MWIR"):
-            QMessageBox.warning(self, "Invalid Output Directory", "Please select a parent folder rather than an EON or MWIR image folder.")
+            QMessageBox.warning(self.view, "Invalid Output Directory", "Please select a parent folder rather than an EON or MWIR image folder.")
             return False
-
+            
         res_dir = os.path.join(folder, "Boresight_Outputs")
         if os.path.exists(res_dir):
             try:
                 if any(os.scandir(res_dir)):
-                    QMessageBox.warning(self, "Directory Already Used", 
+                    QMessageBox.warning(self.view, "Directory Already Used", 
                         "This folder already contains processed Boresight outputs.\n\n"
                         "To prevent overwriting data from previous or current sessions, "
                         "please select an empty or completely new folder.")
@@ -373,12 +306,34 @@ class MainWindow(QMainWindow):
             except PermissionError:
                 pass
 
-        self.dir_output_base.setText(folder)
+        self.view.dir_output_base.setText(folder)
         self.logger.info(f"Output directory set to: {folder}")
         return True
 
+    def validate_output_is_empty(self):
+        output_dir = self.view.dir_output_base.text()
+        if not output_dir: return False
+        res_dir = os.path.join(output_dir, "Boresight_Outputs")
+        
+        if os.path.exists(res_dir):
+            try:
+                if any(os.scandir(res_dir)):
+                    QMessageBox.warning(self.view, "Directory Already Used", 
+                        "The current output directory already contains processed data.\n\n"
+                        "To prevent overwriting, please click 'Browse Input...' and select a new, empty folder.")
+                    return False
+            except PermissionError:
+                pass
+                
+        os.makedirs(res_dir, exist_ok=True)
+        return True
+
     def populate_folder_list(self, input_dir):
-        self.folder_list.clear(); self.system_image_paths.clear(); self.system_manual_coords.clear(); self.fresh_systems.clear(); self._clear_all_viewports()
+        self.view.folder_list.clear()
+        self.system_image_paths.clear()
+        self.system_manual_coords.clear()
+        self.fresh_systems.clear()
+        self._clear_all_viewports()
         self.df_intersections = None
         
         eon_dir = self._find_channel_dir(input_dir, "EON")
@@ -397,20 +352,21 @@ class MainWindow(QMainWindow):
             mwir_imgs = self._get_valid_images(os.path.join(mwir_dir, folder))
             if not eon_imgs or not mwir_imgs: continue
             self.system_image_paths[folder] = {'EON': eon_imgs[0], 'MWIR': mwir_imgs[0]}
-            self.folder_list.addItem(folder)
+            self.view.folder_list.addItem(folder)
             loaded_count += 1
         if loaded_count == 0:
             self.logger.warning(f"No complete EON/MWIR system pairs found in {input_dir}")
             return
         self.logger.info(f"Loaded {loaded_count} complete system pairs.")
-        self.folder_list.setCurrentRow(0)
+        self.view.folder_list.setCurrentRow(0)
         self.invalidate_report()
 
     def load_selected_folder(self):
-        if not self.folder_list.currentItem(): return
-        system_num = self.folder_list.currentItem().text()
-        output_dir = self.dir_output_base.text()
-        self.eon_label.clear_markup(); self.mwir_label.clear_markup()
+        if not self.view.folder_list.currentItem(): return
+        system_num = self.view.folder_list.currentItem().text()
+        output_dir = self.view.dir_output_base.text()
+        self.view.eon_label.clear_markup()
+        self.view.mwir_label.clear_markup()
         if system_num not in self.system_manual_coords:
             self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
         coords = self.system_manual_coords[system_num]
@@ -418,14 +374,14 @@ class MainWindow(QMainWindow):
         eon_path, mwir_path = paths.get('EON'), paths.get('MWIR')
         
         if eon_path and os.path.isfile(eon_path):
-            self.eon_label.set_image(eon_path)
-            if coords['eon_x'] is not None: self.eon_label.draw_markup(coords['eon_x'], coords['eon_y'])
-        else: self.eon_label.clear_image()
+            self.view.eon_label.set_image(eon_path)
+            if coords['eon_x'] is not None: self.view.eon_label.draw_markup(coords['eon_x'], coords['eon_y'])
+        else: self.view.eon_label.clear_image()
             
         if mwir_path and os.path.isfile(mwir_path):
-            self.mwir_label.set_image(mwir_path)
-            if coords['mwir_x'] is not None: self.mwir_label.draw_markup(coords['mwir_x'], coords['mwir_y'])
-        else: self.mwir_label.clear_image()
+            self.view.mwir_label.set_image(mwir_path)
+            if coords['mwir_x'] is not None: self.view.mwir_label.draw_markup(coords['mwir_x'], coords['mwir_y'])
+        else: self.view.mwir_label.clear_image()
         self.update_manual_status_label()
 
         if output_dir and system_num not in self.fresh_systems:
@@ -433,48 +389,54 @@ class MainWindow(QMainWindow):
             path_sbs = os.path.join(res_dir, f"{system_num}_side_by_side_zoomed.png")
             path_eon = os.path.join(res_dir, f"{system_num}_eon_mask_diagnostic_zoomed.png")
             path_mwir = os.path.join(res_dir, f"{system_num}_mwir_mask_diagnostic_zoomed.png")
-            self.diag_side_by_side.set_image(path_sbs) if os.path.isfile(path_sbs) else self.diag_side_by_side.clear_image()
-            self.diag_eon_mask.set_image(path_eon) if os.path.isfile(path_eon) else self.diag_eon_mask.clear_image()
-            self.diag_mwir_mask.set_image(path_mwir) if os.path.isfile(path_mwir) else self.diag_mwir_mask.clear_image()
+            self.view.diag_side_by_side.set_image(path_sbs) if os.path.isfile(path_sbs) else self.view.diag_side_by_side.clear_image()
+            self.view.diag_eon_mask.set_image(path_eon) if os.path.isfile(path_eon) else self.view.diag_eon_mask.clear_image()
+            self.view.diag_mwir_mask.set_image(path_mwir) if os.path.isfile(path_mwir) else self.view.diag_mwir_mask.clear_image()
         else:
-            self.diag_side_by_side.clear_image(); self.diag_eon_mask.clear_image(); self.diag_mwir_mask.clear_image()
+            self.view.diag_side_by_side.clear_image()
+            self.view.diag_eon_mask.clear_image()
+            self.view.diag_mwir_mask.clear_image()
 
     def clear_manual_coords(self):
-        if not self.folder_list.currentItem(): return
-        system_num = self.folder_list.currentItem().text()
+        if not self.view.folder_list.currentItem(): return
+        system_num = self.view.folder_list.currentItem().text()
         self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
-        self.eon_label.clear_markup(); self.mwir_label.clear_markup(); self.update_manual_status_label()
+        self.view.eon_label.clear_markup()
+        self.view.mwir_label.clear_markup()
+        self.update_manual_status_label()
         self.invalidate_report()
 
     def clear_all_manual_coords(self):
         for sys_num in self.system_manual_coords:
             self.system_manual_coords[sys_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
-        self.eon_label.clear_markup()
-        self.mwir_label.clear_markup()
+        self.view.eon_label.clear_markup()
+        self.view.mwir_label.clear_markup()
         self.update_manual_status_label()
         self.logger.info("Cleared manual coordinates for all queued systems.")
         self.invalidate_report()
 
     def register_click(self, channel, x, y):
-        if not self.folder_list.currentItem(): return
-        system_num = self.folder_list.currentItem().text()
+        if not self.view.folder_list.currentItem(): return
+        system_num = self.view.folder_list.currentItem().text()
         if channel == "EON":
-            self.system_manual_coords[system_num]['eon_x'] = x; self.system_manual_coords[system_num]['eon_y'] = y
+            self.system_manual_coords[system_num]['eon_x'] = x
+            self.system_manual_coords[system_num]['eon_y'] = y
         elif channel == "MWIR":
-            self.system_manual_coords[system_num]['mwir_x'] = x; self.system_manual_coords[system_num]['mwir_y'] = y
+            self.system_manual_coords[system_num]['mwir_x'] = x
+            self.system_manual_coords[system_num]['mwir_y'] = y
         self.update_manual_status_label()
         self.logger.info(f"Registered System {system_num} {channel} manual coordinate: ({x}, {y})")
         self.invalidate_report()
 
     def update_manual_status_label(self):
-        if not self.folder_list.currentItem():
-            self.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
+        if not self.view.folder_list.currentItem():
+            self.view.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
             return
-        system_num = self.folder_list.currentItem().text()
+        system_num = self.view.folder_list.currentItem().text()
         coords = self.system_manual_coords.get(system_num, {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None})
         e_txt = f"({coords['eon_x']}, {coords['eon_y']})" if coords['eon_x'] is not None else "Not Selected"
         m_txt = f"({coords['mwir_x']}, {coords['mwir_y']})" if coords['mwir_x'] is not None else "Not Selected"
-        self.lbl_manual_status.setText(f"System {system_num}\nEON Target: {e_txt}\nMWIR Target: {m_txt}")
+        self.view.lbl_manual_status.setText(f"System {system_num}\nEON Target: {e_txt}\nMWIR Target: {m_txt}")
 
     def _validate_queue_pairs(self, folder_list):
         incomplete = []
@@ -489,28 +451,10 @@ class MainWindow(QMainWindow):
                 incomplete.append(f"System {sys_num} (missing {' & '.join(missing)})")
         return incomplete
 
-    def validate_output_is_empty(self):
-        output_dir = self.dir_output_base.text()
-        if not output_dir: return False
-        res_dir = os.path.join(output_dir, "Boresight_Outputs")
-        
-        if os.path.exists(res_dir):
-            try:
-                if any(os.scandir(res_dir)):
-                    QMessageBox.warning(self, "Directory Already Used", 
-                        "The current output directory already contains processed data.\n\n"
-                        "To prevent overwriting, please click 'Browse Input...' and select a new, empty folder.")
-                    return False
-            except PermissionError:
-                pass
-                
-        os.makedirs(res_dir, exist_ok=True)
-        return True
-
     def run_manual_processing(self):
         systems_to_process, partial_systems = [], []
-        for sys_idx in range(self.folder_list.count()):
-            sys_num = self.folder_list.item(sys_idx).text()
+        for sys_idx in range(self.view.folder_list.count()):
+            sys_num = self.view.folder_list.item(sys_idx).text()
             if sys_num in self.system_manual_coords:
                 coords = self.system_manual_coords[sys_num]
                 defined_count = sum(1 for v in coords.values() if v is not None)
@@ -520,36 +464,34 @@ class MainWindow(QMainWindow):
         if not systems_to_process:
             msg = "No systems in the queue have fully defined manual coordinates (both EON and MWIR)."
             if partial_systems: msg += f"\n\nIncomplete points on: {', '.join(partial_systems)}"
-            QMessageBox.warning(self, "Missing Points", msg)
+            QMessageBox.warning(self.view, "Missing Points", msg)
             return
 
         incomplete_pairs = self._validate_queue_pairs(systems_to_process)
         if incomplete_pairs: 
-            QMessageBox.warning(self, "Incomplete Image Pairs", "Every system in the queue must have both EON and MWIR images:\n\n" + "\n".join(incomplete_pairs))
+            QMessageBox.warning(self.view, "Incomplete Image Pairs", "Every system in the queue must have both EON and MWIR images:\n\n" + "\n".join(incomplete_pairs))
             return
         
-        QMessageBox.information(self, "Output Required", "Please browse and select a destination folder for this run's outputs.")
+        QMessageBox.information(self.view, "Output Required", "Please browse and select a destination folder for this run's outputs.")
         if not self.browse_output_directory(): return
-
         if not self.validate_output_is_empty(): return
         
         self._process_folders(systems_to_process, manual_override=True)
 
     def run_batch_processing(self):
-        if self.folder_list.count() == 0: return
-        if not (self.chk_orange.isChecked() or self.chk_green.isChecked() or self.chk_white.isChecked()):
-            QMessageBox.warning(self, "Crosshair Color Required", "Please select at least one Crosshair Color (Orange, Green, or White) for automatic detection.")
+        if self.view.folder_list.count() == 0: return
+        if not (self.view.chk_orange.isChecked() or self.view.chk_green.isChecked() or self.view.chk_white.isChecked()):
+            QMessageBox.warning(self.view, "Crosshair Color Required", "Please select at least one Crosshair Color (Orange, Green, or White) for automatic detection.")
             return
         
-        folders = [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
+        folders = [self.view.folder_list.item(i).text() for i in range(self.view.folder_list.count())]
         incomplete_pairs = self._validate_queue_pairs(folders)
         if incomplete_pairs:
-            QMessageBox.warning(self, "Incomplete Image Pairs", "Every system in the queue must have both EON and MWIR images:\n\n" + "\n".join(incomplete_pairs))
+            QMessageBox.warning(self.view, "Incomplete Image Pairs", "Every system in the queue must have both EON and MWIR images:\n\n" + "\n".join(incomplete_pairs))
             return
             
-        QMessageBox.information(self, "Output Required", "Please browse and select a destination folder for this run's outputs.")
+        QMessageBox.information(self.view, "Output Required", "Please browse and select a destination folder for this run's outputs.")
         if not self.browse_output_directory(): return
-
         if not self.validate_output_is_empty(): return
         
         self._process_folders(folders, manual_override=False)
@@ -558,25 +500,24 @@ class MainWindow(QMainWindow):
         if self.process_thread and self.process_thread.isRunning():
             self.process_thread.requestInterruption()
             self.logger.warning("Cancel requested... stopping after current folder.")
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Cancelled")
+        self.view.progress_bar.setMaximum(100)
+        self.view.progress_bar.setValue(0)
+        self.view.progress_bar.setFormat("Cancelled")
 
     def _process_folders(self, folder_list, manual_override=False):
-        input_dir = self.dir_input_base.text()
-        output_dir = self.dir_output_base.text()
+        input_dir = self.view.dir_input_base.text()
+        output_dir = self.view.dir_output_base.text()
         if not output_dir or not folder_list: return
 
-        self.btn_cancel.setEnabled(True)
-        self.btn_run_batch.setEnabled(False)
-        self.btn_run_manual.setEnabled(False)
-        self._is_manual_run = manual_override
+        self.view.btn_cancel.setEnabled(True)
+        self.view.btn_run_batch.setEnabled(False)
+        self.view.btn_run_manual.setEnabled(False)
 
-        colors = {'orange': self.chk_orange.isChecked(), 'green': self.chk_green.isChecked(), 'white': self.chk_white.isChecked()}
+        colors = {'orange': self.view.chk_orange.isChecked(), 'green': self.view.chk_green.isChecked(), 'white': self.view.chk_white.isChecked()}
         
-        self.progress_bar.setFormat("%p%")
-        self.progress_bar.setMaximum(len(folder_list))
-        self.progress_bar.setValue(0)
+        self.view.progress_bar.setFormat("%p%")
+        self.view.progress_bar.setMaximum(len(folder_list))
+        self.view.progress_bar.setValue(0)
         
         self.process_thread = BatchProcessThread(
             folder_list, input_dir, output_dir, colors, 
@@ -590,61 +531,57 @@ class MainWindow(QMainWindow):
         self.process_thread.start()
 
     def update_progress(self, val, msg):
-        self.progress_bar.setValue(val)
+        self.view.progress_bar.setValue(val)
         self.logger.info(msg)
 
     def on_batch_finished(self, intersection_data, folder_list):
-        import pandas as pd
-        output_dir = self.dir_output_base.text()
+        output_dir = self.view.dir_output_base.text()
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
         os.makedirs(res_dir, exist_ok=True)
         self.fresh_systems.difference_update(folder_list)
 
         if intersection_data:
             try:
-                df_final = pd.DataFrame(intersection_data)
-                df_final["Subfolder ID"] = df_final["Subfolder ID"].astype(str).str.zfill(3)
-                df_final = df_final.sort_values("Subfolder ID")
-                
-                self.df_intersections = df_final
+                from boresight.core import data_handler
+                self.df_intersections = data_handler.process_batch_results(intersection_data)
                 
                 self.logger.info("Processing complete. Extracted intersections kept in memory.")
-                self.load_dataframe_to_table(df_final)
+                self.load_dataframe_to_table(self.df_intersections)
                 self.load_selected_folder()
-                self.btn_gen_report.setEnabled(True)
-                if len(folder_list) == 1: self.tabs.setCurrentIndex(1) 
+                self.view.btn_gen_report.setEnabled(True)
+                if len(folder_list) == 1: self.view.tabs.setCurrentIndex(1) 
             except Exception as e:
                 self.logger.error(f"Failed to process internal data: {e}")
 
-        self.btn_cancel.setEnabled(False)
-        self.btn_run_batch.setEnabled(self.chk_advanced.isChecked())
-        self.btn_run_manual.setEnabled(True)
+        self.view.btn_cancel.setEnabled(False)
+        self.view.btn_run_batch.setEnabled(self.view.chk_advanced.isChecked())
+        self.view.btn_run_manual.setEnabled(True)
         
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(100)
-        self.progress_bar.setFormat("Done")
+        self.view.progress_bar.setMaximum(100)
+        self.view.progress_bar.setValue(100)
+        self.view.progress_bar.setFormat("Done")
 
     def generate_excel_report(self):
-        output_dir = self.dir_output_base.text()
+        output_dir = self.view.dir_output_base.text()
         if not output_dir: return
         sys_constants = self.get_system_constants()
         if not sys_constants: return
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
         excel_output = os.path.join(res_dir, "CoBoresight_Misalignment_Report.xlsx")
 
-        active_systems = [self.folder_list.item(i).text() for i in range(self.folder_list.count())]
+        active_systems = [self.view.folder_list.item(i).text() for i in range(self.view.folder_list.count())]
         if not active_systems:
-            QMessageBox.warning(self, "No Systems Loaded", "The system queue is empty. There is no relevant data to generate a report.")
+            QMessageBox.warning(self.view, "No Systems Loaded", "The system queue is empty. There is no relevant data to generate a report.")
             return
 
-        if self.df_intersections is None or self.df_intersections.empty:
-            QMessageBox.warning(self, "No Processed Data", "No intersection data found yet.\nPlease run Batch Processing or Manual Queue Processing first.")
+        if self.df_intersections is None:
+            QMessageBox.warning(self.view, "No Processed Data", "No intersection data found yet.\nPlease run Batch Processing or Manual Queue Processing first.")
             return
 
         try:
-            df_filtered = self.df_intersections[self.df_intersections["Subfolder ID"].isin(active_systems)]
-            if df_filtered.empty:
-                QMessageBox.warning(self, "No Relevant Data", "None of the systems currently in the queue have processed intersection data available.\nPlease process these systems first.")
+            from boresight.core import data_handler
+            if not data_handler.has_active_data(self.df_intersections, active_systems):
+                QMessageBox.warning(self.view, "No Relevant Data", "None of the systems currently in the queue have processed intersection data available.\nPlease process these systems first.")
                 return
         except Exception:
             pass 
@@ -653,57 +590,61 @@ class MainWindow(QMainWindow):
         
         self.logger.info("Generating formatted Excel Report in background... please wait.")
         
-        self.progress_bar.setFormat("Generating...")
-        self.progress_bar.setMaximum(0)
-        self.progress_bar.setValue(0)
+        self.view.progress_bar.setFormat("Generating...")
+        self.view.progress_bar.setMaximum(0)
+        self.view.progress_bar.setValue(0)
         
-        self.btn_gen_report.setEnabled(False)
-        self.btn_run_batch.setEnabled(False)
-        self.btn_run_manual.setEnabled(False)
+        self.view.btn_gen_report.setEnabled(False)
+        self.view.btn_run_batch.setEnabled(False)
+        self.view.btn_run_manual.setEnabled(False)
         
         self.report_thread = ReportGeneratorThread(self.df_intersections, excel_output, sys_constants, active_systems)
         self.report_thread.finished_report.connect(self.on_report_finished)
         self.report_thread.start()
 
     def on_report_finished(self, success, msg, df_display):
-        self.btn_gen_report.setEnabled(True)
-        self.btn_run_batch.setEnabled(self.chk_advanced.isChecked())
-        self.btn_run_manual.setEnabled(True)
+        self.view.btn_gen_report.setEnabled(True)
+        self.view.btn_run_batch.setEnabled(self.view.chk_advanced.isChecked())
+        self.view.btn_run_manual.setEnabled(True)
         
         if success:
-            self.progress_bar.setMaximum(100)
-            self.progress_bar.setValue(100)
-            self.progress_bar.setFormat("Done")
+            self.view.progress_bar.setMaximum(100)
+            self.view.progress_bar.setValue(100)
+            self.view.progress_bar.setFormat("Done")
             self.logger.info(msg)
             self.load_dataframe_to_table(df_display)
-            self.tabs.setCurrentIndex(2)
+            self.view.tabs.setCurrentIndex(2)
         else:
-            self.progress_bar.setMaximum(100)
-            self.progress_bar.setValue(0)
-            self.progress_bar.setFormat("Error")
+            self.view.progress_bar.setMaximum(100)
+            self.view.progress_bar.setValue(0)
+            self.view.progress_bar.setFormat("Error")
             self.logger.error(f"Report Generation Failed: {msg}")
-            QMessageBox.warning(self, "Report Generation Failed", str(msg))
+            QMessageBox.warning(self.view, "Report Generation Failed", str(msg))
 
     def load_dataframe_to_table(self, df):
-        import pandas as pd
         try:
-            df.fillna("", inplace=True)
-            self.report_table.setRowCount(df.shape[0])
-            self.report_table.setColumnCount(df.shape[1])
-            self.report_table.setHorizontalHeaderLabels(df.columns.astype(str))
-            for row in range(df.shape[0]):
-                for col in range(df.shape[1]):
-                    item = QTableWidgetItem(str(df.iat[row, col]))
-                    self.report_table.setItem(row, col, item)
-            self.report_table.resizeColumnsToContents()
+            from boresight.core import data_handler
+            headers, rows = data_handler.prepare_table_data(df)
+            
+            self.view.report_table.setRowCount(len(rows))
+            self.view.report_table.setColumnCount(len(headers))
+            self.view.report_table.setHorizontalHeaderLabels(headers)
+            
+            for row_idx, row_data in enumerate(rows):
+                for col_idx, cell_value in enumerate(row_data):
+                    item = QTableWidgetItem(cell_value)
+                    self.view.report_table.setItem(row_idx, col_idx, item)
+            self.view.report_table.resizeColumnsToContents()
         except Exception as e:
             self.logger.error(f"Failed to populate table viewer: {str(e)}")
 
-    def closeEvent(self, event):
+    def cleanup(self):
         if self.process_thread and self.process_thread.isRunning():
             self.process_thread.requestInterruption()
             self.process_thread.wait(3000)
         if self.report_thread and self.report_thread.isRunning():
             self.report_thread.wait(3000)
         shutil.rmtree(self.drop_cache_dir, ignore_errors=True)
-        super().closeEvent(event)
+
+    def close(self):
+        return self.view.close()
