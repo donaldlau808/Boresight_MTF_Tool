@@ -104,7 +104,7 @@ class MainWindow(QMainWindow):
         self.btn_run_batch = self.c_sidebar.btn_run_batch
         self.btn_cancel = self.c_sidebar.btn_cancel
         self.btn_gen_report = self.c_sidebar.btn_gen_report
-        
+
         # --- Connections ---
         self._connect_signals()
         self.load_profile()
@@ -360,6 +360,19 @@ class MainWindow(QMainWindow):
         if os.path.basename(folder).upper() in ("EON", "MWIR"):
             QMessageBox.warning(self, "Invalid Output Directory", "Please select a parent folder rather than an EON or MWIR image folder.")
             return False
+
+        res_dir = os.path.join(folder, "Boresight_Outputs")
+        if os.path.exists(res_dir):
+            try:
+                if any(os.scandir(res_dir)):
+                    QMessageBox.warning(self, "Directory Already Used", 
+                        "This folder already contains processed Boresight outputs.\n\n"
+                        "To prevent overwriting data from previous or current sessions, "
+                        "please select an empty or completely new folder.")
+                    return False
+            except PermissionError:
+                pass
+
         self.dir_output_base.setText(folder)
         self.logger.info(f"Output directory set to: {folder}")
         return True
@@ -476,21 +489,22 @@ class MainWindow(QMainWindow):
                 incomplete.append(f"System {sys_num} (missing {' & '.join(missing)})")
         return incomplete
 
-    def clear_output_directory(self):
+    def validate_output_is_empty(self):
         output_dir = self.dir_output_base.text()
         if not output_dir: return False
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
-        if not self._check_excel_unlocked(res_dir):
-            QMessageBox.warning(self, "Excel File Open", "An output Excel report is currently open in Excel.\nPlease close Excel before running processing.")
-            return False
+        
         if os.path.exists(res_dir):
             try:
-                shutil.rmtree(res_dir)
-                os.makedirs(res_dir, exist_ok=True)
-                self.logger.info("Cleared stale files from Boresight_Outputs.")
-            except Exception as e:
-                self.logger.error(f"Failed to clear output directory: {e}")
-                return False
+                if any(os.scandir(res_dir)):
+                    QMessageBox.warning(self, "Directory Already Used", 
+                        "The current output directory already contains processed data.\n\n"
+                        "To prevent overwriting, please click 'Browse Input...' and select a new, empty folder.")
+                    return False
+            except PermissionError:
+                pass
+                
+        os.makedirs(res_dir, exist_ok=True)
         return True
 
     def run_manual_processing(self):
@@ -517,8 +531,8 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Output Required", "Please browse and select a destination folder for this run's outputs.")
         if not self.browse_output_directory(): return
 
-        res_dir = os.path.join(self.dir_output_base.text(), "Boresight_Outputs")
-        if not self._check_excel_unlocked(res_dir): return
+        if not self.validate_output_is_empty(): return
+        
         self._process_folders(systems_to_process, manual_override=True)
 
     def run_batch_processing(self):
@@ -536,7 +550,8 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Output Required", "Please browse and select a destination folder for this run's outputs.")
         if not self.browse_output_directory(): return
 
-        if not self.clear_output_directory(): return
+        if not self.validate_output_is_empty(): return
+        
         self._process_folders(folders, manual_override=False)
 
     def cancel_processing(self):
