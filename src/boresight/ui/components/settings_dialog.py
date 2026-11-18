@@ -110,7 +110,7 @@ class SettingsDialog(QDialog):
         dims_form.addRow("MWIR Output Image Height:", self.inp_mwir_h)
         dims_layout.addWidget(self.dims_group)
         
-        self.btn_reset_dims = QPushButton("Restore Dimensions")
+        self.btn_reset_dims = QPushButton("Restore Factory Dimension Defaults")
         self.btn_reset_dims.setAutoDefault(False)
         self.btn_reset_dims.clicked.connect(self.reset_dims_defaults)
         dims_layout.addWidget(self.btn_reset_dims)
