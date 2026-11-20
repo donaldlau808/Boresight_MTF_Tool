@@ -48,18 +48,18 @@ def create_misalignment_plot(val_x, val_y, max_scale, unit, plot_type, title_tex
     plt.close(fig)
 
 def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constants: dict, active_systems: list = None):
-    RANGE_M = float(sys_constants.get('target_range', 3880.75))
+    RANGE_M = float(sys_constants.get('target_range', 0))
     
-    EON_FOCAL_LEN_MM = float(sys_constants.get('eon_focal_length', 504.0))
-    EON_NATIVE_PITCH_MM = float(sys_constants.get('eon_pixel_pitch', 0.00274))
+    EON_FOCAL_LEN_MM = float(sys_constants.get('eon_focal_length', 0))
+    EON_NATIVE_PITCH_MM = float(sys_constants.get('eon_pixel_pitch', 0))
     
-    MWIR_FOCAL_LEN_MM = float(sys_constants.get('focal_length', 420.0))
-    MWIR_NATIVE_PITCH_MM = float(sys_constants.get('pixel_pitch', 0.010))
+    MWIR_FOCAL_LEN_MM = float(sys_constants.get('focal_length', 0))
+    MWIR_NATIVE_PITCH_MM = float(sys_constants.get('pixel_pitch', 0))
     
-    EON_IMG_W = float(sys_constants.get('eon_img_w', 3840.0))
-    EON_IMG_H = float(sys_constants.get('eon_img_h', 2160.0))
-    MWIR_IMG_W = float(sys_constants.get('mwir_img_w', 1280.0))
-    MWIR_IMG_H = float(sys_constants.get('mwir_img_h', 720.0))
+    EON_IMG_W = float(sys_constants.get('eon_img_w', 0))
+    EON_IMG_H = float(sys_constants.get('eon_img_h', 0))
+    MWIR_IMG_W = float(sys_constants.get('mwir_img_w', 0))
+    MWIR_IMG_H = float(sys_constants.get('mwir_img_h', 0))
 
     if RANGE_M <= 0 or MWIR_FOCAL_LEN_MM <= 0 or EON_FOCAL_LEN_MM <= 0:
         return False, "Target Range and Focal Lengths must be greater than zero.", None
@@ -147,6 +147,7 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
         df['Target Misalignment X (m)'] = num_miss_x; df['Target Misalignment Y (m)'] = num_miss_y
         df['Total Target Misalignment (m)'] = num_tot_miss; df['Co-Boresight Error X (mrad)'] = num_mrad_x
         df['Co-Boresight Error Y (mrad)'] = num_mrad_y; df['Total Co-Boresight Error (mrad)'] = num_tot_mrad
+        df.rename(columns={"Subfolder ID": "File name"}, inplace=True)
 
         with pd.ExcelWriter(excel_output_path, engine='xlsxwriter') as writer:
             

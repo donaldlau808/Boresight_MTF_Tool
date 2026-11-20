@@ -9,6 +9,7 @@ from PySide6.QtCore import QSettings, Qt, QObject
 from boresight.core.logger import setup_logger
 from boresight.ui.threads import BatchProcessThread, ReportGeneratorThread
 from boresight.ui.components.settings_dialog import SettingsDialog
+from boresight.ui.components.system_number_dialog import SystemNumberDialog
 
 class MainController(QObject):
     def __init__(self, view):
@@ -160,11 +161,25 @@ class MainController(QObject):
                 return
         except OSError: return
             
-        raw_num, ok = QInputDialog.getText(self.view, "System Number Request", f"Enter the System Number for this {channel} image:")
-        if not ok or not raw_num.strip(): return
+        self.view.activateWindow()
+        self.view.raise_()
+        
+        dialog = SystemNumberDialog(channel, self.view)
+        if not dialog.exec(): 
+            return
+            
+        raw_num, raw_comment = dialog.get_values()
+        if not raw_num: 
+            return
             
         system_num = self._sanitize_system_id(raw_num)
-        if not system_num: return
+        if not system_num: 
+            return
+            
+        if raw_comment:
+            clean_comment = re.sub(r'[<>:"/\\|?*\x00-\x1f\s]', "_", raw_comment).strip('_')
+            if clean_comment:
+                system_num = f"{system_num}_{clean_comment}"
 
         dest_dir = os.path.join(self.drop_cache_dir, channel, system_num)
         try:

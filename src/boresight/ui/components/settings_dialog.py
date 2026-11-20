@@ -22,16 +22,16 @@ class SettingsDialog(QDialog):
         
         self.profile_inputs = {}
         
-        def add_profile_group(title, prefix, default_range):
+        def add_profile_group(title, prefix, default_range, def_eon_foc, def_eon_pitch, def_mwir_foc, def_mwir_pitch):
             group = QGroupBox(title)
             form = QFormLayout(group)
             
             inputs = {
                 'range': QLineEdit(str(self.settings.value(f"{prefix}/range", default_range))),
-                'eon_focal': QLineEdit(str(self.settings.value(f"{prefix}/eon_focal", 504.0))),
-                'eon_pitch': QLineEdit(str(self.settings.value(f"{prefix}/eon_pitch", 0.00274))),
-                'mwir_focal': QLineEdit(str(self.settings.value(f"{prefix}/focal", 420.0))),
-                'mwir_pitch': QLineEdit(str(self.settings.value(f"{prefix}/pitch", 0.010)))
+                'eon_focal': QLineEdit(str(self.settings.value(f"{prefix}/eon_focal", def_eon_foc))),
+                'eon_pitch': QLineEdit(str(self.settings.value(f"{prefix}/eon_pitch", def_eon_pitch))),
+                'mwir_focal': QLineEdit(str(self.settings.value(f"{prefix}/focal", def_mwir_foc))),
+                'mwir_pitch': QLineEdit(str(self.settings.value(f"{prefix}/pitch", def_mwir_pitch)))
             }
             
             form.addRow("Target Range (m):", inputs['range'])
@@ -43,9 +43,9 @@ class SettingsDialog(QDialog):
             profile_layout.addWidget(group)
             self.profile_inputs[prefix] = inputs
 
-        add_profile_group("Shotover-NZ Defaults", "nz", 3880.75)
-        add_profile_group("Shotover-Boulder Defaults", "boulder", 4500.0)
-        add_profile_group("User Defined Defaults", "user", 3880.75)
+        add_profile_group("Shotover-NZ Defaults", "nz", 4379.65, 504.0, 0.00274, 420.0, 0.010)
+        add_profile_group("Shotover-Boulder Defaults", "boulder", 3880.75, 504.0, 0.00274, 420.0, 0.010)
+        add_profile_group("User Defined Defaults", "user", 0.0, 0.0, 0.0, 0.0, 0.0)
         
         self.btn_reset_profiles = QPushButton("Restore Factory Profile Defaults")
         self.btn_reset_profiles.setAutoDefault(False)
@@ -135,18 +135,18 @@ class SettingsDialog(QDialog):
 
     def reset_profile_defaults(self):
         defaults = {
-            'range': {'nz': '3880.75', 'boulder': '4500.0', 'user': '3880.75'},
-            'eon_focal': '504.0',
-            'eon_pitch': '0.00274',
-            'mwir_focal': '420.0',
-            'mwir_pitch': '0.010',
+            'range': {'nz': '4379.65', 'boulder': '3880.75', 'user': '0.0'},
+            'eon_focal': {'nz': '504.0', 'boulder': '504.0', 'user': '0.0'},
+            'eon_pitch': {'nz': '0.00274', 'boulder': '0.00274', 'user': '0.0'},
+            'mwir_focal': {'nz': '420.0', 'boulder': '420.0', 'user': '0.0'},
+            'mwir_pitch': {'nz': '0.010', 'boulder': '0.010', 'user': '0.0'},
         }
         for prefix, inputs in self.profile_inputs.items():
             inputs['range'].setText(defaults['range'][prefix])
-            inputs['eon_focal'].setText(defaults['eon_focal'])
-            inputs['eon_pitch'].setText(defaults['eon_pitch'])
-            inputs['mwir_focal'].setText(defaults['mwir_focal'])
-            inputs['mwir_pitch'].setText(defaults['mwir_pitch'])
+            inputs['eon_focal'].setText(defaults['eon_focal'][prefix])
+            inputs['eon_pitch'].setText(defaults['eon_pitch'][prefix])
+            inputs['mwir_focal'].setText(defaults['mwir_focal'][prefix])
+            inputs['mwir_pitch'].setText(defaults['mwir_pitch'][prefix])
 
     def reset_roi_defaults(self):
         defaults = {
