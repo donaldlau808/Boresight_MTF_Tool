@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageB
 
 from boresight.ui.main_view import MainView
 from boresight.ui.main_controller import MainController
+from boresight.ui.components.system_number_dialog import SystemNumberDialog
 
 @pytest.fixture(scope="session")
 def qapp():
@@ -99,7 +100,8 @@ def test_browse_remove_all_then_drop_same_system_id(main_win, tmp_path, monkeypa
 
     # Drag and drop a brand-new EON image and enter "17" (unpadded)
     new_eon = _make_solid_image(tmp_path / "external_new_eon.png", bgr_color=(0, 255, 0))
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("17", True))
+    monkeypatch.setattr(SystemNumberDialog, "exec", lambda self: True)
+    monkeypatch.setattr(SystemNumberDialog, "get_values", lambda self: ("17", ""))
     _simulate_widget_drop(main_win.eon_label, new_eon)
 
     assert _get_queue_items(main_win) == ["017"]
@@ -111,7 +113,8 @@ def test_browse_remove_all_then_drop_same_system_id(main_win, tmp_path, monkeypa
 
     # Now drop the matching new MWIR image for 017
     new_mwir = _make_solid_image(tmp_path / "external_new_mwir.png", bgr_color=(255, 0, 0))
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("017", True))
+    monkeypatch.setattr(SystemNumberDialog, "exec", lambda self: True)
+    monkeypatch.setattr(SystemNumberDialog, "get_values", lambda self: ("017", ""))
     _simulate_widget_drop(main_win.mwir_label, new_mwir)
 
     assert main_win.mwir_label.current_pixmap is not None
@@ -144,7 +147,8 @@ def test_browse_remove_drop_out_of_range_remove_and_rebrowse(main_win, tmp_path,
     # Drop out-of-range system 025
     drop_eon = _make_solid_image(tmp_path / "drop_025_eon.png")
     drop_mwir = _make_solid_image(tmp_path / "drop_025_mwir.png")
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("025", True))
+    monkeypatch.setattr(SystemNumberDialog, "exec", lambda self: True)
+    monkeypatch.setattr(SystemNumberDialog, "get_values", lambda self: ("025", ""))
     _simulate_widget_drop(main_win.eon_label, drop_eon)
     _simulate_widget_drop(main_win.mwir_label, drop_mwir)
     assert _get_queue_items(main_win) == ["025"]
@@ -203,7 +207,8 @@ def test_chaotic_drop_overwrite_cancel_and_manual_coords_reset(main_win, tmp_pat
     img_c = _make_solid_image(tmp_path / "c.png")
 
     # 1. Drop EON & MWIR for system 042
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("42", True))
+    monkeypatch.setattr(SystemNumberDialog, "exec", lambda self: True)
+    monkeypatch.setattr(SystemNumberDialog, "get_values", lambda self: ("42", ""))
     _simulate_widget_drop(main_win.eon_label, img_a)
     _simulate_widget_drop(main_win.mwir_label, img_b)
     assert _get_queue_items(main_win) == ["042"]
@@ -221,7 +226,8 @@ def test_chaotic_drop_overwrite_cancel_and_manual_coords_reset(main_win, tmp_pat
     assert main_win.system_manual_coords["042"]["mwir_y"] == 60
 
     # 4. User drops an image but clicks Cancel on System Number prompt -> state unchanged
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("", False))
+    monkeypatch.setattr(SystemNumberDialog, "exec", lambda self: False)
+    monkeypatch.setattr(SystemNumberDialog, "get_values", lambda self: ("", ""))
     _simulate_widget_drop(main_win.eon_label, img_a)
     assert _get_queue_items(main_win) == ["042"]
 
@@ -231,7 +237,8 @@ def test_chaotic_drop_overwrite_cancel_and_manual_coords_reset(main_win, tmp_pat
     txt_file = tmp_path / "notes.txt"
     txt_file.write_text("not an image")
 
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("099", True))
+    monkeypatch.setattr(SystemNumberDialog, "exec", lambda self: True)
+    monkeypatch.setattr(SystemNumberDialog, "get_values", lambda self: ("099", ""))
     _simulate_widget_drop(main_win.eon_label, zero_byte)
     _simulate_widget_drop(main_win.eon_label, txt_file)
     assert _get_queue_items(main_win) == ["042"]
@@ -252,7 +259,8 @@ def test_preflight_validation_and_shutdown_cleanup(main_win, tmp_path, monkeypat
     and closing the window purges the OS temp drop cache.
     """
     img_eon = _make_solid_image(tmp_path / "only_eon.png")
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("055", True))
+    monkeypatch.setattr(SystemNumberDialog, "exec", lambda self: True)
+    monkeypatch.setattr(SystemNumberDialog, "get_values", lambda self: ("055", ""))
     _simulate_widget_drop(main_win.eon_label, img_eon)
 
     # Attempt batch run with no crosshair color checked -> blocked with warning

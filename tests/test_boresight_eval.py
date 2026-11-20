@@ -6,7 +6,8 @@ from boresight.core.boresight_eval import generate_report
 def test_empty_dataframe_failure_mode():
     """Verifies the graceful failure mode when the input dataframe is empty."""
     empty_df = pd.DataFrame()
-    success, msg, df_out = generate_report(empty_df, "out.xlsx", {})
+    valid_constants = {'target_range': 1000.0, 'focal_length': 420.0, 'eon_focal_length': 504.0}
+    success, msg, df_out = generate_report(empty_df, "out.xlsx", valid_constants)
     assert success is False
     assert "No relevant data" in msg
     assert df_out is None
@@ -18,7 +19,9 @@ def test_system_constants_parsing(tmp_path):
         'canvas_width': 3840.0,
         'focal_length': "420",
         'pixel_pitch': "0.01",
-        'native_width': "1280"
+        'native_width': "1280",
+        'eon_focal_length': "504.0",
+        'eon_pixel_pitch': "0.00274"
     }
     
     valid_df = pd.DataFrame({
@@ -51,9 +54,11 @@ def test_divide_by_zero_constants(tmp_path):
     mock_constants = {
         'target_range': 0.0, 
         'canvas_width': 3840.0,
-        'focal_length': 0.0,   # Will cause divide-by-zero in DO-160 math
+        'focal_length': 0.0,
         'pixel_pitch': 0.0,
-        'native_width': 1280.0
+        'native_width': 1280.0,
+        'eon_focal_length': 0.0,
+        'eon_pixel_pitch': 0.0
     }
     
     out_file = str(tmp_path / "out.xlsx")
@@ -67,18 +72,19 @@ def test_divide_by_zero_constants(tmp_path):
 def test_corrupted_dataframe_data(tmp_path):
     """Verifies engine handles DataFrames missing required columns."""
     
-    # Missing the required X/Y intersection columns
+    # Missing the required X/Y intersection columns but retaining Subfolder ID to pass active_systems check
     corrupt_df = pd.DataFrame({"Subfolder ID": ["001"], "RandomData": [123], "Notes": ["corrupt"]})
     
     mock_constants = {
         'target_range': 4000.0, 'canvas_width': 3840.0,
-        'focal_length': 420.0, 'pixel_pitch': 0.01, 'native_width': 1280.0
+        'focal_length': 420.0, 'pixel_pitch': 0.01, 'native_width': 1280.0,
+        'eon_focal_length': 504.0, 'eon_pixel_pitch': 0.00274
     }
     
     out_file = str(tmp_path / "out.xlsx")
     
     try:
-        success, msg, df_out = generate_report(corrupt_df, out_file, mock_constants)
+        success, msg, df_out = generate_report(corrupt_df, out_file, mock_constants, active_systems=["001"])
         assert success is False
         assert "missing required columns" in msg.lower()
     except KeyError as e:
@@ -87,12 +93,11 @@ def test_corrupted_dataframe_data(tmp_path):
 def test_weird_image_dimension_scaling(tmp_path):
     """Verifies coordinates accurately scale from non-standard or mismatched image dimensions."""
     
-    # Testing EON at 1920x1032 and MWIR at 1366x768
     valid_df = pd.DataFrame({
         "Subfolder ID": ["001"], 
-        "EON Mast Center X": [960],  # Absolute center of 1920x1032
+        "EON Mast Center X": [960], 
         "EON Horizon Y": [516],     
-        "MWIR Mast Center X": [683], # Absolute center of 1366x768
+        "MWIR Mast Center X": [683], 
         "MWIR Horizon Y": [384],     
         "Status": ["SUCCESS"]
     })
@@ -106,15 +111,16 @@ def test_weird_image_dimension_scaling(tmp_path):
         'eon_img_w': 1920.0,
         'eon_img_h': 1032.0,
         'mwir_img_w': 1366.0,
-        'mwir_img_h': 768.0
+        'mwir_img_h': 768.0,
+        'eon_focal_length': 504.0,
+        'eon_pixel_pitch': 0.00274
     }
     
     out_file = str(tmp_path / "out_weird.xlsx")
-    success, msg, df_out = generate_report(valid_df, out_file, mock_constants)
+    success, msg, df_out = generate_report(valid_df, out_file, mock_constants, active_systems=["001"])
     
     assert success is True
-    # Floating point division with weird resolutions (like 1366) can introduce microscopic precision artifacts, 
-    # so we use pytest.approx to ensure it evaluates to 0.0 safely.
     assert df_out.iloc[0]['Pixel Offset X (px)'] == pytest.approx(0.0, abs=1e-5)
     assert df_out.iloc[0]['Pixel Offset Y (px)'] == pytest.approx(0.0, abs=1e-5)
     assert df_out.iloc[0]['Total Target Misalignment (m)'] == pytest.approx(0.0, abs=1e-5)
+    assert 'File name' in df_out.columns
