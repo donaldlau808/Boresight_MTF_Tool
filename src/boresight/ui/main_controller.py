@@ -3,6 +3,7 @@ import re
 import glob
 import shutil
 import tempfile
+import json
 from PySide6.QtWidgets import QMessageBox, QFileDialog, QInputDialog, QTableWidgetItem
 from PySide6.QtCore import QSettings, Qt, QObject
 
@@ -29,6 +30,7 @@ class MainController(QObject):
         # --- Internal State ---
         self.system_manual_coords = {}
         self.system_image_paths = {}
+        self.system_optical_centers = {}  # ADDED
         self.fresh_systems = set()
         self.drop_cache_dir = os.path.join(tempfile.gettempdir(), "Boresight_Drop_Cache")
         shutil.rmtree(self.drop_cache_dir, ignore_errors=True)
@@ -148,7 +150,13 @@ class MainController(QObject):
         self.view.diag_side_by_side.clear_image()
         self.view.diag_eon_mask.clear_image()
         self.view.diag_mwir_mask.clear_image()
-        self.view.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
+        self.view.lbl_manual_status.setText(
+            "System --\n"
+            "EON Target: Not Selected\n"
+            "Optical Center X: Not Uploaded, Optical Center Y: Not Uploaded\n"
+            "MWIR Target: Not Selected\n"
+            "Optical Center X: Not Uploaded, Optical Center Y: Not Uploaded"
+        )
 
     def handle_image_drop(self, channel, file_path):
         file_path = os.path.normpath(file_path)
@@ -157,7 +165,7 @@ class MainController(QObject):
             return
         try:
             if os.path.getsize(file_path) == 0:
-                self.logger.error(f"Dropped file is empty (0 bytes): {os.path.basename(file_path)}")
+                self.logger.error(f"Dropped file is empty: {os.path.basename(file_path)}")
                 return
         except OSError: return
             
@@ -165,22 +173,74 @@ class MainController(QObject):
         self.view.raise_()
         
         dialog = SystemNumberDialog(channel, self.view)
-        if not dialog.exec(): 
-            return
+        if not dialog.exec(): return
             
         raw_num, raw_comment = dialog.get_values()
-        if not raw_num: 
-            return
+        if not raw_num: return
             
         system_num = self._sanitize_system_id(raw_num)
-        if not system_num: 
-            return
+        if not system_num: return
             
         if raw_comment:
             clean_comment = re.sub(r'[<>:"/\\|?*\x00-\x1f\s]', "_", raw_comment).strip('_')
-            if clean_comment:
-                system_num = f"{system_num}_{clean_comment}"
+            if clean_comment: system_num = f"{system_num}_{clean_comment}"
 
+        # Ensure system entries exist
+        if system_num not in self.system_image_paths:
+            self.system_image_paths[system_num] = {'EON': None, 'MWIR': None}
+            self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
+            self.system_optical_centers[system_num] = {'EON': None, 'MWIR': None}
+            self.fresh_systems.add(system_num)
+
+        # Handle JS Calibration Drop
+        if file_path.lower().endswith('.js'):
+            try:
+                with open(file_path, 'r') as f:
+                    cal_data = json.load(f)
+                    
+                    # Recursive helper to search the JSON tree for a specific key
+                    def find_key(obj, target_key):
+                        if isinstance(obj, dict):
+                            if target_key in obj:
+                                return obj[target_key]
+                            for val in obj.values():
+                                res = find_key(val, target_key)
+                                if res is not None:
+                                    return res
+                        elif isinstance(obj, list):
+                            for item in obj:
+                                res = find_key(item, target_key)
+                                if res is not None:
+                                    return res
+                        return None
+
+                    raw_cx = find_key(cal_data, 'center_x')
+                    raw_cy = find_key(cal_data, 'center_y')
+                    
+                    # CHANGED: Explicitly check for missing data and alert the user
+                    if raw_cx is None or raw_cy is None:
+                        self.logger.warning(f"Optical center data not found in {os.path.basename(file_path)}.")
+                        QMessageBox.warning(
+                            self.view, 
+                            "Missing Data", 
+                            f"Could not find 'center_x' and/or 'center_y' variables in the uploaded file:\n{os.path.basename(file_path)}"
+                        )
+                        return
+                    
+                    cx = float(raw_cx)
+                    cy = float(raw_cy)
+                    
+                    self.system_optical_centers[system_num][channel] = (cx, cy)
+                
+                self.logger.info(f"Loaded Optical Centers ({cx}, {cy}) for System {system_num} ({channel})")
+                self.update_manual_status_label()
+                self.invalidate_report()
+            except Exception as e:
+                self.logger.error(f"Failed to parse calibration file: {e}")
+                QMessageBox.warning(self.view, "Parse Error", f"Invalid JS file:\n{e}")
+            return
+
+        # Handle Standard Image Drop
         dest_dir = os.path.join(self.drop_cache_dir, channel, system_num)
         try:
             os.makedirs(dest_dir, exist_ok=True)
@@ -192,13 +252,8 @@ class MainController(QObject):
             self.logger.info(f"Loaded {os.path.basename(file_path)} into System {system_num} ({channel})")
         except Exception as e:
             self.logger.error(f"Failed to load dropped image: {e}")
-            QMessageBox.warning(self.view, "Load Error", f"Could not copy the dropped image:\n{e}")
+            QMessageBox.warning(self.view, "Load Error", f"Could not copy image:\n{e}")
             return
-
-        if system_num not in self.system_image_paths:
-            self.system_image_paths[system_num] = {'EON': None, 'MWIR': None}
-            self.system_manual_coords[system_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
-            self.fresh_systems.add(system_num)
 
         self.system_image_paths[system_num][channel] = dest_path
         if channel == "EON":
@@ -230,6 +285,7 @@ class MainController(QObject):
         self.view.folder_list.takeItem(row)
         self.system_manual_coords.pop(system_num, None)
         self.system_image_paths.pop(system_num, None)
+        self.system_optical_centers.pop(system_num, None) # ADDED
         self.fresh_systems.discard(system_num)
         for ch in ("EON", "MWIR"): shutil.rmtree(os.path.join(self.drop_cache_dir, ch, system_num), ignore_errors=True)
         self.logger.info(f"Removed System {system_num} from current processing queue.")
@@ -341,6 +397,7 @@ class MainController(QObject):
         self.view.folder_list.clear()
         self.system_image_paths.clear()
         self.system_manual_coords.clear()
+        self.system_optical_centers.clear() # ADDED
         self.fresh_systems.clear()
         self._clear_all_viewports()
         self.df_intersections = None
@@ -418,6 +475,7 @@ class MainController(QObject):
     def clear_all_manual_coords(self):
         for sys_num in self.system_manual_coords:
             self.system_manual_coords[sys_num] = {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None}
+            self.system_optical_centers[sys_num] = {'EON': None, 'MWIR': None} 
         self.view.eon_label.clear_markup()
         self.view.mwir_label.clear_markup()
         self.update_manual_status_label()
@@ -439,24 +497,44 @@ class MainController(QObject):
 
     def update_manual_status_label(self):
         if not self.view.folder_list.currentItem():
-            self.view.lbl_manual_status.setText("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
+            self.view.lbl_manual_status.setText(
+                "System --\n"
+                "EON Target: Not Selected\n"
+                "Optical Center X: Not Uploaded, Optical Center Y: Not Uploaded\n"
+                "MWIR Target: Not Selected\n"
+                "Optical Center X: Not Uploaded, Optical Center Y: Not Uploaded"
+            )
             return
+        
         system_num = self.view.folder_list.currentItem().text()
         coords = self.system_manual_coords.get(system_num, {'eon_x': None, 'eon_y': None, 'mwir_x': None, 'mwir_y': None})
+        opts = self.system_optical_centers.get(system_num, {'EON': None, 'MWIR': None})
+        
         e_txt = f"({coords['eon_x']}, {coords['eon_y']})" if coords['eon_x'] is not None else "Not Selected"
         m_txt = f"({coords['mwir_x']}, {coords['mwir_y']})" if coords['mwir_x'] is not None else "Not Selected"
-        self.view.lbl_manual_status.setText(f"System {system_num}\nEON Target: {e_txt}\nMWIR Target: {m_txt}")
+        
+        e_opt_str = f"Optical Center X: {opts['EON'][0]:.4f}, Optical Center Y: {opts['EON'][1]:.4f}" if opts['EON'] is not None else "Optical Center X: Not Uploaded, Optical Center Y: Not Uploaded"
+        m_opt_str = f"Optical Center X: {opts['MWIR'][0]:.4f}, Optical Center Y: {opts['MWIR'][1]:.4f}" if opts['MWIR'] is not None else "Optical Center X: Not Uploaded, Optical Center Y: Not Uploaded"
+        
+        self.view.lbl_manual_status.setText(f"System {system_num}\nEON Target: {e_txt}\n{e_opt_str}\nMWIR Target: {m_txt}\n{m_opt_str}")
 
     def _validate_queue_pairs(self, folder_list):
         incomplete = []
         for sys_num in folder_list:
             paths = self.system_image_paths.get(sys_num, {})
+            opts = self.system_optical_centers.get(sys_num, {})
+            
             eon_ok = bool(paths.get('EON') and os.path.isfile(paths['EON']))
             mwir_ok = bool(paths.get('MWIR') and os.path.isfile(paths['MWIR']))
-            if not eon_ok or not mwir_ok:
+            eon_opt_ok = opts.get('EON') is not None
+            mwir_opt_ok = opts.get('MWIR') is not None
+            
+            if not eon_ok or not mwir_ok or not eon_opt_ok or not mwir_opt_ok:
                 missing = []
-                if not eon_ok: missing.append("EON")
-                if not mwir_ok: missing.append("MWIR")
+                if not eon_ok: missing.append("EON Image")
+                if not mwir_ok: missing.append("MWIR Image")
+                if not eon_opt_ok: missing.append("EON .js Cal")
+                if not mwir_opt_ok: missing.append("MWIR .js Cal")
                 incomplete.append(f"System {sys_num} (missing {' & '.join(missing)})")
         return incomplete
 
@@ -551,6 +629,14 @@ class MainController(QObject):
 
         if intersection_data:
             try:
+                for row in intersection_data:
+                    sys_id = row.get("Subfolder ID", "")
+                    opts = self.system_optical_centers.get(sys_id, {'EON': None, 'MWIR': None})
+                    row["EON Opt Center X"] = opts['EON'][0]
+                    row["EON Opt Center Y"] = opts['EON'][1]
+                    row["MWIR Opt Center X"] = opts['MWIR'][0]
+                    row["MWIR Opt Center Y"] = opts['MWIR'][1]
+
                 from boresight.core import data_handler
                 self.df_intersections = data_handler.process_batch_results(intersection_data)
                 

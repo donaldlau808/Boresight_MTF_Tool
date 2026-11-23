@@ -47,7 +47,15 @@ class Sidebar(QWidget):
         
         manual_group = QGroupBox("Manual Coordinate Selection")
         manual_layout = QVBoxLayout(manual_group)
-        self.lbl_manual_status = QLabel("System --\nEON Target: Not Selected\nMWIR Target: Not Selected")
+        self.lbl_manual_status = QLabel(
+            "System --\n"
+            "EON Target: Not Selected\n"
+            "Optical Center X: Not Uploaded\n" 
+            "Optical Center Y: Not Uploaded\n"
+            "MWIR Target: Not Selected\n"
+            "Optical Center X: Not Uploaded\n"
+            "Optical Center Y: Not Uploaded"
+        )
         manual_layout.addWidget(self.lbl_manual_status)
         
         manual_btn_layout = QVBoxLayout()

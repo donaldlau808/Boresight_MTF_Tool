@@ -105,10 +105,10 @@ class ClickableLabel(ResizableImageLabel):
             for url in urls:
                 if url.isLocalFile():
                     file_path = os.path.normpath(url.toLocalFile())
-                    if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff')):
+                    if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.js')):
                         event.acceptProposedAction()
                         self.image_dropped.emit(self.channel_name, file_path)
-                        break 
+                        break
 
     def mousePressEvent(self, event):
         if self.dragMode() == QGraphicsView.ScrollHandDrag and event.button() == Qt.LeftButton and QApplication.keyboardModifiers() == Qt.ControlModifier:

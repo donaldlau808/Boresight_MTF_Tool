@@ -75,8 +75,15 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
     if df.empty:
         return False, "No relevant data found for the systems currently in the queue.", None
     
-    expected_cols = ["Subfolder ID", "EON Mast Center X", "EON Horizon Y", "MWIR Mast Center X", "MWIR Horizon Y", "Status"]
-    if not set(expected_cols).issubset(df.columns): return False, "Data is missing required columns.", None
+    # STRICT ENFORCEMENT: Optical Center columns are now mandatory
+    expected_cols = [
+        "Subfolder ID", "EON Mast Center X", "EON Horizon Y", 
+        "MWIR Mast Center X", "MWIR Horizon Y", "Status",
+        "EON Opt Center X", "EON Opt Center Y", 
+        "MWIR Opt Center X", "MWIR Opt Center Y"
+    ]
+    if not set(expected_cols).issubset(df.columns): 
+        return False, "Data is missing required columns. Ensure .js optical centers are uploaded.", None
 
     df = df[expected_cols]
     for col in ['EON Mast Center X', 'EON Horizon Y', 'MWIR Mast Center X', 'MWIR Horizon Y']:
@@ -86,13 +93,8 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
         plot_records = []
         num_px_x, num_px_y, num_miss_x, num_miss_y, num_tot_miss, num_mrad_x, num_mrad_y, num_tot_mrad = [], [], [], [], [], [], [], []
         
-        # 1. Calculate Angular Resolution (mrad per pixel) for each camera independently
         eon_mrad_per_px = (EON_NATIVE_PITCH_MM / EON_FOCAL_LEN_MM) * 1000.0
         mwir_mrad_per_px = (MWIR_NATIVE_PITCH_MM / MWIR_FOCAL_LEN_MM) * 1000.0
-
-        # 2. Determine the Optical Center (Middle Pixel) of both image outputs
-        eon_cx, eon_cy = EON_IMG_W / 2.0, EON_IMG_H / 2.0
-        mwir_cx, mwir_cy = MWIR_IMG_W / 2.0, MWIR_IMG_H / 2.0
 
         for i, row in df.iterrows():
             subfolder = str(row['Subfolder ID']).zfill(3)
@@ -102,29 +104,35 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
                 plot_records.append((None, None, None, None, None, None))
                 continue
 
-            # 3. Calculate distance from the optical center in pixels
+            # 2. Determine the Optical Center using strictly required dataframe values
+            eon_frac_x = row['EON Opt Center X']
+            eon_frac_y = row['EON Opt Center Y']
+            mwir_frac_x = row['MWIR Opt Center X']
+            mwir_frac_y = row['MWIR Opt Center Y']
+
+            eon_cx = EON_IMG_W * eon_frac_x
+            eon_cy = EON_IMG_H * eon_frac_y
+            mwir_cx = MWIR_IMG_W * mwir_frac_x
+            mwir_cy = MWIR_IMG_H * mwir_frac_y
+
             eon_off_px_x = row['EON Mast Center X'] - eon_cx
             eon_off_px_y = row['EON Horizon Y'] - eon_cy
             
             mwir_off_px_x = row['MWIR Mast Center X'] - mwir_cx
             mwir_off_px_y = row['MWIR Horizon Y'] - mwir_cy
 
-            # 4. Convert to independent true angles (mrad) from optical center
             eon_ang_x = eon_off_px_x * eon_mrad_per_px
             eon_ang_y = eon_off_px_y * eon_mrad_per_px
             
             mwir_ang_x = mwir_off_px_x * mwir_mrad_per_px
             mwir_ang_y = mwir_off_px_y * mwir_mrad_per_px
 
-            # 5. Calculate Co-Boresight Angular Error (subtracting true angles)
             mrad_x = mwir_ang_x - eon_ang_x
             mrad_y = mwir_ang_y - eon_ang_y
 
-            # 6. Convert angular error to physical target misalignment at range
             delta_m_x = (mrad_x / 1000.0) * RANGE_M
             delta_m_y = (mrad_y / 1000.0) * RANGE_M
             
-            # Optional visual Pixel Offset represented in terms of the MWIR feed
             delta_px_x = mrad_x / mwir_mrad_per_px
             delta_px_y = mrad_y / mwir_mrad_per_px
             
@@ -147,20 +155,36 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
         df['Target Misalignment X (m)'] = num_miss_x; df['Target Misalignment Y (m)'] = num_miss_y
         df['Total Target Misalignment (m)'] = num_tot_miss; df['Co-Boresight Error X (mrad)'] = num_mrad_x
         df['Co-Boresight Error Y (mrad)'] = num_mrad_y; df['Total Co-Boresight Error (mrad)'] = num_tot_mrad
-        df.rename(columns={"Subfolder ID": "File name"}, inplace=True)
+        
+        # Explicitly rename the columns for the Excel Report
+        df.rename(columns={
+            "Subfolder ID": "File name",
+            "EON Mast Center X": "EON Target X (px)",
+            "EON Horizon Y": "EON Target Y (px)",
+            "MWIR Mast Center X": "MWIR Target X (px)",
+            "MWIR Horizon Y": "MWIR Target Y (px)",
+            "EON Opt Center X": "EON Opt Center X (frac)",
+            "EON Opt Center Y": "EON Opt Center Y (frac)",
+            "MWIR Opt Center X": "MWIR Opt Center X (frac)",
+            "MWIR Opt Center Y": "MWIR Opt Center Y (frac)"
+        }, inplace=True)
 
         with pd.ExcelWriter(excel_output_path, engine='xlsxwriter') as writer:
             
+            # Added Image Dimensions to the Constants Export
             constants = [
                 ("Target Range", RANGE_M, "m", "Distance to target"),
                 ("EON Focal Length", EON_FOCAL_LEN_MM, "mm", "Visible Lens Focal Length"),
                 ("EON Native Pixel Pitch", EON_NATIVE_PITCH_MM, "mm", "Visible Sensor Pixel Size"),
                 ("MWIR Focal Length", MWIR_FOCAL_LEN_MM, "mm", "Thermal Lens Focal Length"),
-                ("MWIR Native Pixel Pitch", MWIR_NATIVE_PITCH_MM, "mm", "Thermal Sensor Pixel Size")
+                ("MWIR Native Pixel Pitch", MWIR_NATIVE_PITCH_MM, "mm", "Thermal Sensor Pixel Size"),
+                ("EON Image Width", EON_IMG_W, "px", "Visible Image Width Setting"),
+                ("EON Image Height", EON_IMG_H, "px", "Visible Image Height Setting"),
+                ("MWIR Image Width", MWIR_IMG_W, "px", "Thermal Image Width Setting"),
+                ("MWIR Image Height", MWIR_IMG_H, "px", "Thermal Image Height Setting")
             ]
 
-            # Dynamic Row Assignments to prevent overlaps
-            constants_start = 1 # 0-indexed row 1
+            constants_start = 1
             export_start = constants_start + len(constants) + 2
             DATA_START_ROW = export_start + 2
 
@@ -174,19 +198,16 @@ def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constant
             bold_fmt = workbook.add_format({'bold': True})
             reject_fmt = workbook.add_format({'bold': True, 'font_color': 'red', 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
 
-            worksheet.set_column('A:E', 21)
-            worksheet.set_column('F:F', 30)
-            worksheet.set_column('G:Z', 38)
+            worksheet.set_column('A:I', 18)
+            worksheet.set_column('J:Z', 38)
             
             worksheet.merge_range('A1:T1', "CO-BORESIGHT MISALIGNMENT EXECUTION SHEET (PHYSICAL METERS-FIRST)", header_fmt)
             
-            # Write Constants Table
             worksheet.write(constants_start, 0, "1. SYSTEM CONSTANTS", bold_fmt)
             for r_idx, (param, val, unit, desc) in enumerate(constants, start=constants_start + 1):
                 worksheet.write(r_idx, 0, param); worksheet.write(r_idx, 1, val, input_fmt)
                 worksheet.write(r_idx, 2, unit); worksheet.write(r_idx, 3, desc)
 
-            # Write Data Table
             worksheet.write(export_start, 0, "2. CO-BORESIGHT DATA EXPORT", bold_fmt)
             for col_idx, col_name in enumerate(df.columns):
                 worksheet.write(DATA_START_ROW-1, col_idx, col_name, header_fmt)

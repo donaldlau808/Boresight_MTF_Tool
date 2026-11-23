@@ -30,7 +30,11 @@ def test_system_constants_parsing(tmp_path):
         "EON Horizon Y": [100], 
         "MWIR Mast Center X": [100], 
         "MWIR Horizon Y": [100], 
-        "Status": ["SUCCESS"]
+        "Status": ["SUCCESS"],
+        "EON Opt Center X": [0.5],
+        "EON Opt Center Y": [0.5],
+        "MWIR Opt Center X": [0.5],
+        "MWIR Opt Center Y": [0.5]
     })
     
     out_file = str(tmp_path / "out.xlsx")
@@ -48,7 +52,11 @@ def test_divide_by_zero_constants(tmp_path):
         "EON Horizon Y": [100], 
         "MWIR Mast Center X": [100], 
         "MWIR Horizon Y": [100], 
-        "Status": ["SUCCESS"]
+        "Status": ["SUCCESS"],
+        "EON Opt Center X": [0.5],
+        "EON Opt Center Y": [0.5],
+        "MWIR Opt Center X": [0.5],
+        "MWIR Opt Center Y": [0.5]
     })
     
     mock_constants = {
@@ -72,7 +80,7 @@ def test_divide_by_zero_constants(tmp_path):
 def test_corrupted_dataframe_data(tmp_path):
     """Verifies engine handles DataFrames missing required columns."""
     
-    # Missing the required X/Y intersection columns but retaining Subfolder ID to pass active_systems check
+    # Intentionally missing the required X/Y intersection columns to test rejection logic
     corrupt_df = pd.DataFrame({"Subfolder ID": ["001"], "RandomData": [123], "Notes": ["corrupt"]})
     
     mock_constants = {
@@ -99,7 +107,11 @@ def test_weird_image_dimension_scaling(tmp_path):
         "EON Horizon Y": [516],     
         "MWIR Mast Center X": [683], 
         "MWIR Horizon Y": [384],     
-        "Status": ["SUCCESS"]
+        "Status": ["SUCCESS"],
+        "EON Opt Center X": [0.5],
+        "EON Opt Center Y": [0.5],
+        "MWIR Opt Center X": [0.5],
+        "MWIR Opt Center Y": [0.5]
     })
     
     mock_constants = {
@@ -119,7 +131,7 @@ def test_weird_image_dimension_scaling(tmp_path):
     out_file = str(tmp_path / "out_weird.xlsx")
     success, msg, df_out = generate_report(valid_df, out_file, mock_constants, active_systems=["001"])
     
-    assert success is True
+    assert success is True, f"Report generation failed with message: {msg}"
     assert df_out.iloc[0]['Pixel Offset X (px)'] == pytest.approx(0.0, abs=1e-5)
     assert df_out.iloc[0]['Pixel Offset Y (px)'] == pytest.approx(0.0, abs=1e-5)
     assert df_out.iloc[0]['Total Target Misalignment (m)'] == pytest.approx(0.0, abs=1e-5)
