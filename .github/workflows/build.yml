@@ -14,41 +14,45 @@ jobs:
       contents: write
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Set up Python 3.15
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.15'
-        cache: 'pip'
+      - name: Set up Python 3.15
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.15'
+          cache: 'pip'
 
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install .
-        pip install pytest pyinstaller
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pytest pyinstaller
 
-    - name: Run Automated Tests
-      env:
-        PYTHONPATH: src
-      run: |
-        python -m pytest tests/ -v
+      - name: Run Automated Tests
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m pytest tests/ -v
 
-    - name: Build Windows Executable
-      run: |
-        pyinstaller BoresightTool.spec --clean
+      - name: Build Windows Executable
+        run: |
+          pyinstaller BoresightTool.spec --clean
 
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Boresight_MTF_Tool_Windows
-        path: dist/Boresight_MTF_Tool.exe
-        retention-days: 14
+      - name: Append Version to Executable
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: Rename-Item -Path "dist\Boresight_MTF_Tool.exe" -NewName "Boresight_MTF_Tool_${{ github.ref_name }}.exe"
 
-    - name: Publish Permanent GitHub Release
-      if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v2
-      with:
-        files: dist/Boresight_MTF_Tool.exe
-        generate_release_notes: true
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Boresight_MTF_Tool_Windows
+          path: dist/Boresight_MTF_Tool*.exe
+          retention-days: 14
+
+      - name: Publish Permanent GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Boresight_MTF_Tool_${{ github.ref_name }}.exe
+          generate_release_notes: true
