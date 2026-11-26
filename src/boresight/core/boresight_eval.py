@@ -2,50 +2,58 @@ import os
 import tempfile
 import warnings
 import cv2
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.patches import Circle
 import numpy as np
 import pandas as pd
 from pathlib import Path
 
 def create_misalignment_plot(val_x, val_y, max_scale, unit, plot_type, title_text, save_path):
-    fig, ax = plt.subplots(figsize=(3.4, 3.4), dpi=120)
+    fig = Figure(figsize=(3.4, 3.4), dpi=120)
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+
     for r, c in zip([1.0, 0.75, 0.5, 0.25], ['#e2e8f0', '#cbd5e1', '#94a3b8', '#64748b']):
         radius = max_scale * r
-        ax.add_patch(plt.Circle((0, 0), radius, color=c, fill=False, lw=1.2, alpha=0.45 if plot_type != 'total' else 1.0))
+        ax.add_patch(Circle((0, 0), radius, color=c, fill=False, lw=1.2, alpha=0.45 if plot_type != 'total' else 1.0))
         label_x, label_y = radius * np.cos(np.radians(45)), radius * np.sin(np.radians(45))
-        ax.text(label_x, label_y, f'{radius:.2g} {unit}', color='#475569', fontsize=6.5, 
+        ax.text(label_x, label_y, f'{radius:.2g} {unit}', color='#475569', fontsize=6.5,
                 ha='center', va='center', bbox=dict(facecolor='white', edgecolor='none', pad=1.0, alpha=0.75))
-    
+
     ax.axhline(0, color='#94a3b8' if plot_type != 'y' else '#0f172a', linestyle=':' if plot_type != 'y' else '-', lw=1 if plot_type != 'y' else 1.5)
     ax.axvline(0, color='#94a3b8' if plot_type != 'x' else '#0f172a', linestyle=':' if plot_type != 'x' else '-', lw=1 if plot_type != 'x' else 1.5)
     ax.plot(0, 0, marker='o', markersize=4, color='#0f172a')
-    
+
     if plot_type == 'x':
         ax.plot([0, val_x], [0, 0], color='#0891b2', linestyle='-', lw=2.5)
         ax.plot(val_x, 0, marker='|', color='#0891b2', markersize=22, markeredgewidth=3)
-        ax.annotate(f'{val_x:+.3f} {unit}', xy=(val_x, 0), xytext=(val_x, max_scale * 0.12 if val_x >= 0 else -max_scale * 0.12), 
+        ax.annotate(f'{val_x:+.3f} {unit}', xy=(val_x, 0), xytext=(val_x, max_scale * 0.12 if val_x >= 0 else -max_scale * 0.12),
                     ha='center', va='bottom' if val_x >= 0 else 'top', fontsize=8, color='#0891b2', fontweight='bold')
     elif plot_type == 'y':
         ax.plot([0, 0], [0, val_y], color='#0891b2', linestyle='-', lw=2.5)
         ax.plot(0, val_y, marker='_', color='#0891b2', markersize=22, markeredgewidth=3)
-        ax.annotate(f'{val_y:+.3f} {unit}', xy=(0, val_y), xytext=(max_scale * 0.12 if val_y >= 0 else -max_scale * 0.12, val_y), 
+        ax.annotate(f'{val_y:+.3f} {unit}', xy=(0, val_y), xytext=(max_scale * 0.12 if val_y >= 0 else -max_scale * 0.12, val_y),
                     va='center', ha='left' if val_y >= 0 else 'right', fontsize=8, color='#0891b2', fontweight='bold')
     elif plot_type == 'total':
         ax.plot([0, val_x], [0, val_y], color='#0891b2', linestyle='--', lw=1.5, alpha=0.7)
         ax.plot(val_x, val_y, marker='+', color='#0891b2', markersize=14, markeredgewidth=2.5)
-        ax.add_patch(plt.Circle((val_x, val_y), max_scale * 0.08, color='#0891b2', fill=False, lw=1.5, linestyle='--'))
-        
+        ax.add_patch(Circle((val_x, val_y), max_scale * 0.08, color='#0891b2', fill=False, lw=1.5, linestyle='--'))
+
     ax.set_xlim(-max_scale, max_scale)
     ax.set_ylim(-max_scale, max_scale)
     ax.set_aspect('equal')
     ax.axis('off')
-    plt.title(title_text, fontsize=8.5, fontweight='bold', color='#1e293b', pad=8)
-    plt.tight_layout()
+    ax.set_title(title_text, fontsize=8.5, fontweight='bold', color='#1e293b', pad=8)
+    fig.tight_layout()
     try:
-        plt.savefig(save_path, transparent=True, bbox_inches='tight')
+        fig.savefig(save_path, transparent=True, bbox_inches='tight')
     except PermissionError:
         print(f"WARNING: Could not save plot {save_path} (File in use or permission denied)")
-    plt.close(fig)
+    finally:
+        fig.clear()
 
 def generate_report(df_input: pd.DataFrame, excel_output_path: str, sys_constants: dict, active_systems: list = None):
     RANGE_M = float(sys_constants.get('target_range', 0))

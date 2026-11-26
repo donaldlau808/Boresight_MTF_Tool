@@ -16,13 +16,19 @@ class ResizableImageLabel(QGraphicsView):
         self.setStyleSheet("background-color: #F0F0F0; border: 1px solid #C0C0C0;")
         self.zoom_factor = 1.0
         self.current_pixmap = None
+        self.current_image_path = None
         self.placeholder_text = ""
 
-    def set_image(self, image_path):
-        img = QImage(image_path)
+    def set_image(self, image_path, force_reload=False):
+        norm_path = os.path.normpath(image_path)
+        if not force_reload and self.current_pixmap is not None and self.current_image_path == norm_path:
+            return
+
+        img = QImage(norm_path)
         if not img.isNull():
             pixmap = QPixmap.fromImage(img)
             self.current_pixmap = pixmap
+            self.current_image_path = norm_path
             self.pixmap_item.setPixmap(pixmap)
             self.scene.setSceneRect(self.pixmap_item.boundingRect())
             self.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
@@ -33,6 +39,7 @@ class ResizableImageLabel(QGraphicsView):
 
     def clear_image(self):
         self.current_pixmap = None
+        self.current_image_path = None
         self.pixmap_item.setPixmap(QPixmap()) 
         self.scene.setSceneRect(QRectF(0, 0, 1, 1))
         self.viewport().update()
@@ -81,9 +88,12 @@ class ClickableLabel(ResizableImageLabel):
         self.crosshair_lines = []
         self.setAcceptDrops(True)
 
-    def set_image(self, image_path):
-        super().set_image(image_path)
-        self.clear_markup()
+    def set_image(self, image_path, force_reload=False):
+        norm_path = os.path.normpath(image_path)
+        already_loaded = (not force_reload and self.current_pixmap is not None and self.current_image_path == norm_path)
+        super().set_image(norm_path, force_reload=force_reload)
+        if not already_loaded:
+            self.clear_markup()
 
     def clear_markup(self):
         self.clicked_pt = None

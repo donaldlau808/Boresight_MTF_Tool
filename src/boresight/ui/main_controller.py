@@ -259,9 +259,13 @@ class MainController(QObject):
         if channel == "EON":
             self.system_manual_coords[system_num]['eon_x'] = None
             self.system_manual_coords[system_num]['eon_y'] = None
+            if self.view.folder_list.currentItem() and self.view.folder_list.currentItem().text() == system_num:
+                self.view.eon_label.clear_image()
         elif channel == "MWIR":
             self.system_manual_coords[system_num]['mwir_x'] = None
             self.system_manual_coords[system_num]['mwir_y'] = None
+            if self.view.folder_list.currentItem() and self.view.folder_list.currentItem().text() == system_num:
+                self.view.mwir_label.clear_image()
 
         existing_items = [self.view.folder_list.item(i).text() for i in range(self.view.folder_list.count())]
         if system_num not in existing_items:
@@ -427,10 +431,24 @@ class MainController(QObject):
         self.view.folder_list.setCurrentRow(0)
         self.invalidate_report()
 
+    def _load_diagnostics_for_system(self, system_num):
+        output_dir = self.view.dir_output_base.text()
+        if output_dir and system_num not in self.fresh_systems:
+            res_dir = os.path.join(output_dir, "Boresight_Outputs")
+            path_sbs = os.path.join(res_dir, f"{system_num}_side_by_side_zoomed.png")
+            path_eon = os.path.join(res_dir, f"{system_num}_eon_mask_diagnostic_zoomed.png")
+            path_mwir = os.path.join(res_dir, f"{system_num}_mwir_mask_diagnostic_zoomed.png")
+            self.view.diag_side_by_side.set_image(path_sbs, force_reload=True) if os.path.isfile(path_sbs) else self.view.diag_side_by_side.clear_image()
+            self.view.diag_eon_mask.set_image(path_eon, force_reload=True) if os.path.isfile(path_eon) else self.view.diag_eon_mask.clear_image()
+            self.view.diag_mwir_mask.set_image(path_mwir, force_reload=True) if os.path.isfile(path_mwir) else self.view.diag_mwir_mask.clear_image()
+        else:
+            self.view.diag_side_by_side.clear_image()
+            self.view.diag_eon_mask.clear_image()
+            self.view.diag_mwir_mask.clear_image()
+
     def load_selected_folder(self):
         if not self.view.folder_list.currentItem(): return
         system_num = self.view.folder_list.currentItem().text()
-        output_dir = self.view.dir_output_base.text()
         self.view.eon_label.clear_markup()
         self.view.mwir_label.clear_markup()
         if system_num not in self.system_manual_coords:
@@ -449,19 +467,7 @@ class MainController(QObject):
             if coords['mwir_x'] is not None: self.view.mwir_label.draw_markup(coords['mwir_x'], coords['mwir_y'])
         else: self.view.mwir_label.clear_image()
         self.update_manual_status_label()
-
-        if output_dir and system_num not in self.fresh_systems:
-            res_dir = os.path.join(output_dir, "Boresight_Outputs")
-            path_sbs = os.path.join(res_dir, f"{system_num}_side_by_side_zoomed.png")
-            path_eon = os.path.join(res_dir, f"{system_num}_eon_mask_diagnostic_zoomed.png")
-            path_mwir = os.path.join(res_dir, f"{system_num}_mwir_mask_diagnostic_zoomed.png")
-            self.view.diag_side_by_side.set_image(path_sbs) if os.path.isfile(path_sbs) else self.view.diag_side_by_side.clear_image()
-            self.view.diag_eon_mask.set_image(path_eon) if os.path.isfile(path_eon) else self.view.diag_eon_mask.clear_image()
-            self.view.diag_mwir_mask.set_image(path_mwir) if os.path.isfile(path_mwir) else self.view.diag_mwir_mask.clear_image()
-        else:
-            self.view.diag_side_by_side.clear_image()
-            self.view.diag_eon_mask.clear_image()
-            self.view.diag_mwir_mask.clear_image()
+        self._load_diagnostics_for_system(system_num)
 
     def clear_manual_coords(self):
         if not self.view.folder_list.currentItem(): return
@@ -596,55 +602,70 @@ class MainController(QObject):
         output_dir = self.view.dir_output_base.text()
         if not output_dir or not folder_list: return
 
+        if self.process_thread and self.process_thread.isRunning():
+            self.process_thread.wait(1000)
+
         self.view.btn_cancel.setEnabled(True)
         self.view.btn_run_batch.setEnabled(False)
         self.view.btn_run_manual.setEnabled(False)
 
         colors = {'orange': self.view.chk_orange.isChecked(), 'green': self.view.chk_green.isChecked(), 'white': self.view.chk_white.isChecked()}
         
-        self.view.progress_bar.setFormat("%p%")
-        self.view.progress_bar.setMaximum(len(folder_list))
-        self.view.progress_bar.setValue(0)
+        if len(folder_list) == 1:
+            self.view.progress_bar.setFormat("Processing...")
+            self.view.progress_bar.setMaximum(0)
+            self.view.progress_bar.setValue(0)
+        else:
+            self.view.progress_bar.setFormat("%p%")
+            self.view.progress_bar.setMaximum(len(folder_list))
+            self.view.progress_bar.setValue(0)
         
         self.process_thread = BatchProcessThread(
             folder_list, input_dir, output_dir, colors, 
             manual_coords_dict=self.system_manual_coords, 
             manual_override=manual_override,
             system_paths_dict=self.system_image_paths,
-            roi_config=self._get_roi_config()
+            roi_config=self._get_roi_config(),
+            optical_centers_dict=self.system_optical_centers
         )
         self.process_thread.progress_update.connect(self.update_progress)
         self.process_thread.finished_data.connect(self.on_batch_finished)
         self.process_thread.start()
 
     def update_progress(self, val, msg):
-        self.view.progress_bar.setValue(val)
+        if self.view.progress_bar.maximum() > 0:
+            self.view.progress_bar.setValue(val)
         self.logger.info(msg)
 
-    def on_batch_finished(self, intersection_data, folder_list):
+    def _populate_table_rows(self, headers, rows):
+        self.view.report_table.setUpdatesEnabled(False)
+        try:
+            self.view.report_table.setRowCount(len(rows))
+            self.view.report_table.setColumnCount(len(headers))
+            self.view.report_table.setHorizontalHeaderLabels(headers)
+            for row_idx, row_data in enumerate(rows):
+                for col_idx, cell_value in enumerate(row_data):
+                    self.view.report_table.setItem(row_idx, col_idx, QTableWidgetItem(cell_value))
+            self.view.report_table.resizeColumnsToContents()
+        finally:
+            self.view.report_table.setUpdatesEnabled(True)
+
+    def on_batch_finished(self, df_final, headers, rows, folder_list):
         output_dir = self.view.dir_output_base.text()
         res_dir = os.path.join(output_dir, "Boresight_Outputs")
         os.makedirs(res_dir, exist_ok=True)
         self.fresh_systems.difference_update(folder_list)
 
-        if intersection_data:
+        if df_final is not None:
             try:
-                for row in intersection_data:
-                    sys_id = row.get("Subfolder ID", "")
-                    opts = self.system_optical_centers.get(sys_id, {'EON': None, 'MWIR': None})
-                    row["EON Opt Center X"] = opts['EON'][0]
-                    row["EON Opt Center Y"] = opts['EON'][1]
-                    row["MWIR Opt Center X"] = opts['MWIR'][0]
-                    row["MWIR Opt Center Y"] = opts['MWIR'][1]
-
-                from boresight.core import data_handler
-                self.df_intersections = data_handler.process_batch_results(intersection_data)
-                
+                self.df_intersections = df_final
                 self.logger.info("Processing complete. Extracted intersections kept in memory.")
-                self.load_dataframe_to_table(self.df_intersections)
-                self.load_selected_folder()
+                self._populate_table_rows(headers, rows)
+                if len(folder_list) == 1:
+                    self.view.tabs.setCurrentIndex(1)
+                if self.view.folder_list.currentItem():
+                    self._load_diagnostics_for_system(self.view.folder_list.currentItem().text())
                 self.view.btn_gen_report.setEnabled(True)
-                if len(folder_list) == 1: self.view.tabs.setCurrentIndex(1) 
             except Exception as e:
                 self.logger.error(f"Failed to process internal data: {e}")
 
@@ -697,7 +718,7 @@ class MainController(QObject):
         self.report_thread.finished_report.connect(self.on_report_finished)
         self.report_thread.start()
 
-    def on_report_finished(self, success, msg, df_display):
+    def on_report_finished(self, success, msg, df_display, headers, rows):
         self.view.btn_gen_report.setEnabled(True)
         self.view.btn_run_batch.setEnabled(self.view.chk_advanced.isChecked())
         self.view.btn_run_manual.setEnabled(True)
@@ -707,7 +728,7 @@ class MainController(QObject):
             self.view.progress_bar.setValue(100)
             self.view.progress_bar.setFormat("Done")
             self.logger.info(msg)
-            self.load_dataframe_to_table(df_display)
+            self._populate_table_rows(headers, rows)
             self.view.tabs.setCurrentIndex(2)
         else:
             self.view.progress_bar.setMaximum(100)

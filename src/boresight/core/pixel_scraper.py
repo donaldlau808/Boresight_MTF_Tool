@@ -2,8 +2,10 @@ import os
 import cv2
 import warnings
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
 
 def create_crosshair_masks(bgr_img: np.ndarray, active_colors: dict, stroke_dil: int, line_dil: int) -> tuple[np.ndarray, np.ndarray]:
@@ -139,40 +141,56 @@ def plot_mask_diagnostic(bgr_img, safe_mask, mast_x, left_edge, right_edge, hori
     plt.close()
 
 def plot_and_save_side_by_side(rgb_eon, rgb_mwir, eon_mast, eon_horizon, mwir_mast, mwir_horizon, subfolder_name, save_path, eon_box, mwir_box, is_zoomed=False):
-    img_h, img_w = rgb_eon.shape[:2]
-    e_x_min, e_x_max, e_y_min, e_y_max = _clip_box(eon_box, img_w, img_h)
-    m_x_min, m_x_max, m_y_min, m_y_max = _clip_box(mwir_box, img_w, img_h)
-    
-    dpi = 100 if is_zoomed else 150
-    figsize = (img_w / dpi, img_h / dpi) if is_zoomed else (14, 8)
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize, dpi=dpi)
-    
-    ax1.imshow(rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max], extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation='nearest')
-    # CHANGED: Solid red lines for EON
+    eon_h, eon_w = rgb_eon.shape[:2]
+    mwir_h, mwir_w = rgb_mwir.shape[:2]
+
+    if is_zoomed:
+        # Match EON's relative zoom fractions (300/3840 half-width, 200/2160 half-height)
+        rel_rx = 300.0 / 3840.0
+        rel_ry = 200.0 / 2160.0
+        e_rx = max(10, int(round(eon_w * rel_rx)))
+        e_ry = max(10, int(round(eon_h * rel_ry)))
+        m_rx = max(10, int(round(mwir_w * rel_rx)))
+        m_ry = max(10, int(round(mwir_h * rel_ry)))
+
+        eon_box = (int(eon_mast) - e_rx, int(eon_mast) + e_rx, int(eon_horizon) - e_ry, int(eon_horizon) + e_ry)
+        mwir_box = (int(mwir_mast) - m_rx, int(mwir_mast) + m_rx, int(mwir_horizon) - m_ry, int(mwir_horizon) + m_ry)
+
+    e_x_min, e_x_max, e_y_min, e_y_max = _clip_box(eon_box, eon_w, eon_h)
+    m_x_min, m_x_max, m_y_min, m_y_max = _clip_box(mwir_box, mwir_w, mwir_h)
+
+    dpi = 120 if is_zoomed else 150
+    figsize = (18, 9) if is_zoomed else (14, 8)
+
+    fig = Figure(figsize=figsize, dpi=dpi)
+    FigureCanvasAgg(fig)
+    ax1, ax2 = fig.subplots(1, 2)
+
+    ax1.imshow(rgb_eon[e_y_min:e_y_max, e_x_min:e_x_max], extent=[e_x_min, e_x_max, e_y_max, e_y_min], interpolation="nearest")
     ax1.axvline(x=eon_mast, color="red", linestyle="-", linewidth=1.5)
     ax1.axhline(y=eon_horizon, color="red", linestyle="-", linewidth=1.5)
-    ax1.plot(eon_mast, eon_horizon, "ro", markersize=8) 
-    ax1.set_title("EON Channel (Visible)", fontsize=16 if is_zoomed else 12, fontweight="bold")
-    
-    ax2.imshow(rgb_mwir[m_y_min:m_y_max, m_x_min:m_x_max], extent=[m_x_min, m_x_max, m_y_max, m_y_min], interpolation='nearest')
-    # CHANGED: Solid red lines for MWIR
+    ax1.plot(eon_mast, eon_horizon, "ro", markersize=8)
+    ax1.set_title("EON Channel (Visible)", fontsize=14 if is_zoomed else 12, fontweight="bold")
+
+    ax2.imshow(rgb_mwir[m_y_min:m_y_max, m_x_min:m_x_max], extent=[m_x_min, m_x_max, m_y_max, m_y_min], interpolation="nearest")
     ax2.axvline(x=mwir_mast, color="red", linestyle="-", linewidth=1.5)
     ax2.axhline(y=mwir_horizon, color="red", linestyle="-", linewidth=1.5)
-    ax2.plot(mwir_mast, mwir_horizon, "ro", markersize=8) 
-    ax2.set_title("MWIR Channel (Thermal)", fontsize=16 if is_zoomed else 12, fontweight="bold")
+    ax2.plot(mwir_mast, mwir_horizon, "ro", markersize=8)
+    ax2.set_title("MWIR Channel (Thermal)", fontsize=14 if is_zoomed else 12, fontweight="bold")
 
     for ax, limits in zip([ax1, ax2], [(e_x_min, e_x_max, e_y_max, e_y_min), (m_x_min, m_x_max, m_y_max, m_y_min)]):
-        ax.set_xlim(limits[0], limits[1]); ax.set_ylim(limits[2], limits[3])
+        ax.set_xlim(limits[0], limits[1])
+        ax.set_ylim(limits[2], limits[3])
         ax.grid(True, linestyle=":", alpha=0.6)
 
-    plt.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=20 if is_zoomed else 13, fontweight="bold")
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95] if is_zoomed else None)
-    try: 
-        plt.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
-    except PermissionError: 
+    fig.suptitle(f"[{subfolder_name}] Side-by-Side Pixel Alignment", fontsize=16 if is_zoomed else 13, fontweight="bold")
+    fig.tight_layout(rect=[0, 0.02, 1, 0.95] if is_zoomed else None)
+    try:
+        fig.savefig(save_path, dpi=dpi, bbox_inches=None if is_zoomed else "tight")
+    except PermissionError:
         print(f"WARNING: Could not save plot {save_path} (File in use or permission denied)")
-    plt.close()
+    finally:
+        fig.clear()
 
 def process_pair(eon_path: str, mwir_path: str, subfolder_name: str, output_dir: str, 
                  eon_colors: dict, mwir_colors: dict, manual_coords: dict = None, roi_config: dict = None, save_masks: bool = True) -> tuple:
